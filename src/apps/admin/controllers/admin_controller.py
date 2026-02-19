@@ -1,0 +1,163 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends, Request, status
+from fastapi.responses import JSONResponse
+from fastapi_pagination import Page, Params
+
+import constants
+from apps.admin.schemas.admin_user_response import AdminListUsersResponse
+from apps.admin.schemas.request import EncryptedRequest
+from apps.admin.services.user import AdminUserService
+from apps.user.models.user import UserModel
+from apps.user.schemas.response import BaseUserResponse
+from core.auth import AdminHasPermission
+from core.exceptions import UnauthorizedError
+from core.types import RoleType
+from core.utils.schema import BaseResponse
+from core.utils.set_cookies import set_auth_cookies
+
+router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+@router.post(
+    "/sign-in",
+    status_code=status.HTTP_200_OK,
+    name="sign-in",
+    description="sign-in",
+    operation_id="sign_in_admin",
+)
+async def sign_in(
+    request: Request,
+    body: Annotated[EncryptedRequest, Body()],
+    service: Annotated[AdminUserService, Depends()],
+) -> JSONResponse:
+    """
+    Authenticate an admin user and generate access tokens.
+
+    This endpoint handles admin login with encrypted credentials. Upon successful
+    authentication, it returns access tokens and sets authentication cookies.
+
+    Args:
+        request: The FastAPI request object containing application state
+        body: Encrypted request containing admin credentials
+        service: AdminUserService instance for business logic
+
+    Returns:
+        JSONResponse: Response with authentication tokens and cookies
+
+    Raises:
+        InvalidCredentialsException: If credentials are invalid
+        BadRequestError: If required fields are missing
+    """
+    res = await service.login_admin(request=request, **body.model_dump())
+    if "access_token" in res and res.get("access_token"):
+        data = {"status": constants.SUCCESS, "code": status.HTTP_200_OK, "data": res}
+        response = JSONResponse(content=data)
+        response = set_auth_cookies(response, res, RoleType.ADMIN)
+        return response
+    else:
+        # Handle case where login fails but doesn't raise an exception
+        raise UnauthorizedError(constants.UNAUTHORIZED)
+
+
+@router.get(
+    "/users",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(AdminHasPermission())],
+    name="Admin get all users",
+    description="Admin get all users",
+    operation_id="admin_get_users",
+)
+async def get_users(
+    page_params: Annotated[Params, Depends()],
+    service: Annotated[AdminUserService, Depends()],
+) -> BaseResponse[Page[AdminListUsersResponse]]:
+    """
+    Retrieve a paginated list of all users for admin management.
+
+    This endpoint allows administrators to view all registered users with
+    pagination support. Only admin users can access this endpoint.
+
+    Args:
+        page_params: Pagination parameters (page size, page number)
+        service: AdminUserService instance for business logic
+
+    Returns:
+        BaseResponse[Page[AdminListUsersResponse]]: Paginated list of users
+
+    Raises:
+        AdminHasPermission: If user doesn't have admin permissions
+    """
+    return BaseResponse(data=await service.get_users(params=page_params))
+
+
+@router.get(
+    "/self",
+    status_code=status.HTTP_200_OK,
+    name="get self",
+    description="Get Self",
+    operation_id="get_self_admin",
+)
+async def get_self_handler(
+    user: Annotated[UserModel, Depends(AdminHasPermission())],
+    service: Annotated[AdminUserService, Depends()],
+) -> BaseResponse[BaseUserResponse]:
+    """
+    Retrieve the current admin user's profile information.
+
+    This endpoint returns the authenticated admin's profile data including
+    basic user information like name, email, and role.
+
+    Args:
+        user: Authenticated admin user from token
+        service: AdminUserService instance for business logic
+
+    Returns:
+        BaseResponse[BaseUserResponse]: Admin user profile data
+
+    Raises:
+        AdminHasPermission: If user doesn't have admin permissions
+    """
+    return BaseResponse(data=await service.get_self_admin(user_id=user.id))
+
+
+@router.patch(
+    "/change-password",
+    name="change password",
+    description="Change Password",
+    operation_id="change_password",
+    status_code=status.HTTP_200_OK,
+)
+async def change_password(
+    request: Request,
+    user: Annotated[UserModel, Depends(AdminHasPermission())],
+    body: Annotated[EncryptedRequest, Body()],
+    service: Annotated[AdminUserService, Depends()],
+) -> BaseResponse[BaseUserResponse]:
+    """
+    Change the password for the authenticated admin user.
+
+    This endpoint allows admins to update their password. The request must
+    include the current password for verification and a new password that
+    meets security requirements.
+
+    Args:
+        request: The FastAPI request object
+        user: Authenticated admin user from token
+        body: Encrypted request containing current and new passwords
+        service: AdminUserService instance for business logic
+
+    Returns:
+        BaseResponse[BaseUserResponse]: Updated admin user data
+
+    Raises:
+        InvalidCredentialsException: If current password is incorrect
+        WeakPasswordException: If new password doesn't meet requirements
+        UserNotFoundException: If user is not found
+        AdminHasPermission: If user doesn't have admin permissions
+    """
+    return BaseResponse(
+        data=await service.change_password(
+            request=request, **body.model_dump(), user=user.id
+        )
+    )
