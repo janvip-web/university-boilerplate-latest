@@ -1,22 +1,18 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from apps.enroll.schemas.request import EnrollStudentsToCourseRequest
+from apps.user.schemas.enroll_request import EnrollStudentsToCourseRequest, SelfEnrollRequest
 from apps.course.models.course import CourseModel
-from apps.student.models.student import StudentModel
+from apps.user.models.user import UserModel, RoleModel
 from apps.user.exceptions import (
-    DuplicateEmailException,
-    InvalidCredentialsException,
     UserNotFoundException,
     CourseNotFoundException
 )
-
-
 from core.db import db_session
 
 
@@ -36,7 +32,7 @@ class EnrollService:
             raise CourseNotFoundException
         
         result = await self.session.execute(
-            select(StudentModel).where(StudentModel.id.in_(req.student_ids))
+            select(UserModel).where(UserModel.id.in_(req.student_ids))
         )
         students = result.scalars().all()
 
@@ -44,34 +40,41 @@ class EnrollService:
             raise UserNotFoundException
         
         for student in students:
+            if student.role_id != 2:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"User {student.id} is not a student"
+            )
             if student not in course.students:
                 course.students.append(student)
 
         return {"message": "Students enrolled successfully"}
     
-    
-    async def get_course_with_students(self, course_id: UUID):
+
+    async def   self_enroll_to_course(self, req: SelfEnrollRequest, current_user:UserModel)->JSONResponse:
+
+        if current_user.role_id != 2:
+            raise HTTPException(
+                status_code=400,
+                detail=f"User {current_user.id} is not a student"
+            )
+        
         result = await self.session.execute(
             select(CourseModel).options(selectinload(CourseModel.students))
-            .where(CourseModel.id==course_id)
+            .where(CourseModel.id.in_(req.course_ids))
         )
-        course = result.scalar_one_or_none()
+        courses = result.scalars().all()
 
-        if not course:
+        if not courses:
             raise CourseNotFoundException
         
-        return course
+        for course in courses:
+            if current_user not in course.students:
+                course.students.append(current_user)
 
+        return {"message": "Student enrolled in selected courses"}
+    
+    
 
-    #     student = await self.session.get(StudentModel, student_id)
-    #     course = await self.session.get(CourseModel, course_id)
-
-    #     if not student or not course:
-    #         raise ValueError("Invalid student or course ID")
-
-    #     student.courses.append(course)
-
-    #     await self.session.flush()
-
-    #     return {"message": "Student enrolled successfully"}
+    
 

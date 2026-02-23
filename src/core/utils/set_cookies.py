@@ -5,7 +5,7 @@ from core.types import RoleType
 
 
 def set_auth_cookies(
-    response: JSONResponse, tokens: dict[str, str], role: RoleType
+    response: JSONResponse, tokens: dict[str, str], role_id: int
 ) -> JSONResponse:
     """
     Set authentication cookies in an HTTP response.
@@ -20,12 +20,13 @@ def set_auth_cookies(
     """
     cookies_params = {
         "domain": settings.COOKIES_DOMAIN,
-        "secure": True,
-        "samesite": "lax" if settings.is_production else "none",
+        # "secure": True,
+        # "secure": False,
+        # "samesite": "none",
         "httponly": True,
     }
 
-    if role == RoleType.USER or role == RoleType.STUDENT or role == RoleType.FACULTY:
+    if role_id == 2 or role_id == 3 :
         response.set_cookie(
             "accessToken",
             tokens["access_token"],
@@ -38,7 +39,7 @@ def set_auth_cookies(
             expires=int(settings.REFRESH_TOKEN_EXP),
             **cookies_params,
         )
-    if role == RoleType.ADMIN:
+    if role_id == 1:
         response.set_cookie(
             "adminAccessToken",
             tokens["access_token"],
@@ -54,28 +55,28 @@ def set_auth_cookies(
     return response
 
 
-def delete_cookies(response: JSONResponse, role: RoleType) -> JSONResponse:
+def delete_cookies(response: JSONResponse, role_id: int) -> JSONResponse:
     """
     Delete authentication cookies from an HTTP response.
     This function takes an HTTP response object and removes the "accessToken" and "refreshToken" cookies
     from the response, making them invalid for subsequent requests.
     Args:
         response (Response): The HTTP response object to remove cookies from.
-        role(Role type): The role type of user.
+        role_id (int): The role ID of user.
     Returns:
         Response: The updated HTTP response with the cookies removed.
     """
     cookie_params = {
         "domain": settings.COOKIES_DOMAIN,
-        "secure": True,
-        "samesite": "lax" if settings.is_production else "none",
-        "httponly": False,
+        # "secure": True,
+        # "samesite": "lax" if settings.is_production else "none",
+        "httponly": True,
     }
 
-    if role == RoleType.USER:
+    if role_id == 2 or role_id == 3:
         response.delete_cookie("accessToken", **cookie_params)
         response.delete_cookie("refreshToken", **cookie_params)
-    elif role == RoleType.ADMIN:
+    elif role_id == 1:
         response.delete_cookie("adminAccessToken", **cookie_params)
         response.delete_cookie("adminRefreshToken", **cookie_params)
 

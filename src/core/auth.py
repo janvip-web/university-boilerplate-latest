@@ -9,12 +9,12 @@ from fastapi.security.base import SecurityBase
 from jwt import DecodeError, ExpiredSignatureError, decode, encode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, selectinload
 
 import constants.messages as constants
 from apps.user.models.user import UserModel
-from apps.student.models.student import StudentModel
-from apps.faculty.models.faculty import FacultyModel
+# from apps.student.models.student import StudentModel
+# from apps.faculty.models.faculty import FacultyModel
 from config import settings
 from core.db import db_session
 from core.exceptions import InvalidJWTTokenException, UnauthorizedError
@@ -170,14 +170,14 @@ class HasPermission:
 
     """
 
-    def __init__(self, type_: RoleType) -> None:
+    def __init__(self, role_name:list[str]) -> None:
         """
         Initialize the HasPermission object with the specified permission type.
 
         Args:
             type_ (RoleType): The type of permission to check.
         """
-        self.type = type_
+        self.role_name = role_name
 
     async def __call__(
         self,
@@ -192,13 +192,15 @@ class HasPermission:
         :raises UnauthorizedError: If the user is not authorized.
         :return: The user object if authorized, None otherwise.
         """
-        print(payload)
+        # print(payload)
         if not payload:
-            if self.type == RoleType.OPTIONAL:
-                return None
-            else:
+            # if self.role_name == RoleType.OPTIONAL:
+            #     return None
+            # else:
                 raise UnauthorizedError(message=constants.UNAUTHORIZED)
-        print(payload.get("id"))
+        
+        print(payload)
+        print("ID FROM TOKEN:", payload.get("id"))
         # user = await session.scalar(
         #     select(UserModel).where(UserModel.id == payload.get("id"))
         # )
@@ -208,23 +210,27 @@ class HasPermission:
         # )
 
         user = await session.scalar(
-            select(FacultyModel).where(FacultyModel.id == payload.get("id"))   
+            select(UserModel)
+            .options(selectinload(UserModel.role_ref))
+            .where(UserModel.id == payload.get("id"))  
         )
 
         if not user :
             raise UnauthorizedError(message=constants.UNAUTHORIZED)
         
-        allowed_roles = {
-            RoleType.USER: [RoleType.USER],
-            RoleType.STAFF: [RoleType.STAFF],
-            RoleType.ADMIN: [RoleType.ADMIN],
-            RoleType.ANY: [RoleType.USER, RoleType.ADMIN, RoleType.STUDENT],
-            RoleType.OPTIONAL: [RoleType.USER, RoleType.STUDENT],
-            RoleType.STUDENT: [RoleType.STUDENT],
-            RoleType.FACULTY: [RoleType.FACULTY]
-        }
+        # allowed_roles = {
+        #     RoleType.USER: [RoleType.USER],
+        #     RoleType.STAFF: [RoleType.STAFF],
+        #     RoleType.ADMIN: [RoleType.ADMIN],
+        #     RoleType.ANY: [RoleType.USER, RoleType.ADMIN, RoleType.STUDENT],
+        #     RoleType.OPTIONAL: [RoleType.USER, RoleType.STUDENT],
+        #     RoleType.STUDENT: [RoleType.STUDENT],
+        #     RoleType.FACULTY: [RoleType.FACULTY]
+        # }
 
-        if user.role not in allowed_roles[self.type]:
+        # if user.role_id not in allowed_roles[self.type]:
+        #     raise UnauthorizedError(message=constants.UNAUTHORIZED)
+        if user.role_ref.role not in self.role_name:
             raise UnauthorizedError(message=constants.UNAUTHORIZED)
 
         return user
@@ -259,10 +265,11 @@ class AdminHasPermission:
 
         user = await session.scalar(
             select(UserModel)
-            .options(load_only(UserModel.id, UserModel.role))
+            .options(selectinload(UserModel.role_ref))
             .where(UserModel.id == payload.get("id"))
         )
 
-        if not user or user.role != RoleType.ADMIN:
+        # if not user or user.role_id != RoleType.ADMIN:
+        if not user or user.role_id != 1:
             raise UnauthorizedError(message=constants.UNAUTHORIZED)
         return user

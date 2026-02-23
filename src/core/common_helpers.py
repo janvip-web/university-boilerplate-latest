@@ -41,28 +41,28 @@ async def create_password():
     return secrets.token_urlsafe(15)
 
 
-async def create_tokens(user_id: UUID, role: RoleType) -> dict[str, str]:
+async def create_tokens(user_id: UUID, role_id: int) -> dict[str, str]:
     """
     Create access-token and refresh-token for a user.
 
     Args:
-        role:
+        role_id: The role ID of the user.
         user_id:
     :return: A dictionary containing access-token and refresh-token.
     """
-    if role == RoleType.USER or role == RoleType.STUDENT or role == RoleType.FACULTY:
+    if role_id == 2 or role_id == 3:
         access_token = access.encode(
-            payload={"id": str(user_id)}, expire_period=int(settings.ACCESS_TOKEN_EXP)
+            payload={"id": str(user_id), "role_id": role_id}, expire_period=int(settings.ACCESS_TOKEN_EXP)
         )
         refresh_token = refresh.encode(
-            payload={"id": str(user_id)}, expire_period=int(settings.REFRESH_TOKEN_EXP)
+            payload={"id": str(user_id), "role_id": role_id}, expire_period=int(settings.REFRESH_TOKEN_EXP)
         )
-    elif role == RoleType.ADMIN:
+    elif role_id == 1:
         access_token = admin_access.encode(
-            payload={"id": str(user_id)}, expire_period=int(settings.ACCESS_TOKEN_EXP)
+            payload={"id": str(user_id), "role_id": role_id}, expire_period=int(settings.ACCESS_TOKEN_EXP)
         )
         refresh_token = admin_refresh.encode(
-            payload={"id": str(user_id)}, expire_period=int(settings.REFRESH_TOKEN_EXP)
+            payload={"id": str(user_id), "role_id": role_id}, expire_period=int(settings.REFRESH_TOKEN_EXP)
         )
     else:
         raise InvalidRoleException

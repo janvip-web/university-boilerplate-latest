@@ -5,9 +5,10 @@ from alembic import context
 from sqlalchemy.engine import Connection
 
 from apps import Base
-from apps.student.models.student import StudentModel
-from apps.faculty.models.faculty import FacultyModel
+# from apps.student.models.student import StudentModel
+# from apps.faculty.models.faculty import FacultyModel
 from apps.course.models.course import CourseModel, Association
+
 from core.db import engine
 
 config = context.config

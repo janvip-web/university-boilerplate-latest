@@ -5,3 +5,6 @@ from core.utils import CamelCaseModel
 class EnrollStudentsToCourseRequest(CamelCaseModel):
     course_id: UUID
     student_ids: List[UUID]
+
+class SelfEnrollRequest(CamelCaseModel):
+    course_ids: List[UUID]

@@ -6,27 +6,19 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, UniqueConstraint
 
 from core.db import Base
-from core.types import RoleType
 from core.utils.mixins import UUIDPrimaryKeyMixin
 
-if TYPE_CHECKING:
-    from apps.student.models.student import StudentModel
-    from apps.faculty.models.faculty import FacultyModel
 
 class CourseModel(Base, UUIDPrimaryKeyMixin):
     __tablename__="courses"
 
     course_name: Mapped[str] = mapped_column(index=True)
     course_credit: Mapped[int] = mapped_column()
-    faculty_id: Mapped[UUID] = mapped_column(ForeignKey("faculties.id", ondelete="SET NULL"), nullable=True)
-    # student_id: Mapped[UUID] = mapped_column(ForeignKey("students.id",ondelete="SET NULL", onupdate="CASCADE"),  nullable=True)
-    # faculty_id: Mapped[UUID] = mapped_column(ForeignKey("faculties.id"))
+    course_description: Mapped[str] = mapped_column(nullable=True)
+    faculty_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
 
-    # student: Mapped["StudentModel"] = relationship("StudentModel", back_populates="courses")
-    faculty: Mapped["FacultyModel"] = relationship("FacultyModel", back_populates="courses")
-
-    students: Mapped[List["StudentModel"]] = relationship("StudentModel",secondary="association", back_populates="courses", lazy="selectin")
-    # faculty: Mapped["FacultyModel"] = relationship("FacultyModel", back_populates="courses")
+    students = relationship("UserModel", secondary="association", back_populates="courses")
+    faculty = relationship("UserModel", back_populates="faculty_courses")
 
     def __str__(self):
         return f"<Course {self.course_name}>"
@@ -34,18 +26,15 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
     @classmethod
     def create(
         cls,
-        # student_id: UUID,
-        # faculty_id: UUID,
         course_name: str,
         course_credit: int,
-        faculty_id: UUID | None = None
+        course_description: str | None = None,
     ) -> Self:
         return cls(
             id=uuid.uuid4(),
-            # student_id=student_id,
-            faculty_id=faculty_id,
             course_name=course_name,
             course_credit=course_credit,
+            course_description=course_description,
         )
     
 
@@ -55,27 +44,27 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
 class Association(Base, UUIDPrimaryKeyMixin):
     __tablename__="association"
 
-    student_id: Mapped[UUID] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"))
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     course_id: Mapped[UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"))
-    # faculty_id: Mapped[UUID] = mapped_column(ForeignKey("faculties.id"))
+   
 
 
     __table_args__ = (
         UniqueConstraint(
-            "student_id",
+            "user_id",
             "course_id",
-            name="uq_student_course"
+            name="uq_user_course"
         ),
     )
 
     @classmethod
     def create(
         cls,
-        student_id: UUID,
+        user_id: UUID,
         course_id: UUID,
     ) -> Self:
         return cls(
-            # id=uuid.uuid4(),
-            student_id=student_id,
+            id=uuid.uuid4(),
+            user_id=user_id,
             course_id=course_id,
         )

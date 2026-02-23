@@ -1,11 +1,13 @@
+from uuid import UUID
 import uuid
 from typing import Self
 
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db import Base
 from core.types import RoleType
 from core.utils.mixins import TimeStampMixin, UUIDPrimaryKeyMixin
+from sqlalchemy import ForeignKey
 
 
 class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
@@ -30,7 +32,14 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
     email: Mapped[str] = mapped_column(index=True, unique=True)
     phone: Mapped[str] = mapped_column(index=True, unique=True)
     password: Mapped[str] = mapped_column()
-    role: Mapped[RoleType] = mapped_column()
+    # role: Mapped[RoleType] = mapped_column()
+    is_deleted: Mapped[bool] = mapped_column(default=False, nullable=False)
+    is_activated: Mapped[bool] = mapped_column(default=True, nullable=False)
+    role_id: Mapped[int] = mapped_column(ForeignKey("roles.role_id"))
+
+    role_ref: Mapped["RoleModel"] = relationship("RoleModel", back_populates="users")
+    courses = relationship("CourseModel", secondary="association", back_populates="students")
+    faculty_courses = relationship("CourseModel", back_populates="faculty")
 
     def __str__(self) -> str:
         """
@@ -48,7 +57,7 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
         phone: str,
         email: str,
         password: str,
-        role: str = RoleType.USER,
+        role_id: int,
     ) -> Self:
         """
         Create a new user.
@@ -68,5 +77,19 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
             email=email.lower(),
             phone=phone,
             password=password,
-            role=role,
+            role_id=role_id
         )
+    
+
+
+
+class RoleModel(Base):
+    __tablename__ = "roles"
+
+    role_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    role: Mapped[str] = mapped_column(index=True, unique=True)
+
+    users: Mapped[list[UserModel]] = relationship("UserModel", back_populates="role_ref")
+
+    def __str__(self) -> str:
+        return f"<{self.role}>"

@@ -28,6 +28,7 @@ from constants.messages import (
     WEAK_PASSWORD,
     WEBHOOK_FAILED,
     WEBHOOK_SUCCESSFUL,
+    ROLE_NOT_FOUND
 )
 from constants.regex import EMAIL_REGEX
 
@@ -62,4 +63,5 @@ __all__ = [
     "PASSWORD_FIELD_REQUIRED",
     "EMAIL_REGEX",
     "PAYLOAD_TIMEOUT",
+    "ROLE_NOT_FOUND"
 ]

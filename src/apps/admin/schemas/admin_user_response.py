@@ -1,7 +1,7 @@
 from apps.user.schemas.response import BaseUserResponse
 
 
-class AdminListUsersResponse(BaseUserResponse):
+class  AdminListUsersResponse(BaseUserResponse):
     """
     Response object for listing users in the admin interface.
 
@@ -15,3 +15,4 @@ class AdminListUsersResponse(BaseUserResponse):
 
     email: str
     phone: str
+    role: str

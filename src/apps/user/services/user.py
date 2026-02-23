@@ -2,10 +2,11 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, selectinload
 
 import constants
 from apps.user.exceptions import (
@@ -13,7 +14,7 @@ from apps.user.exceptions import (
     InvalidCredentialsException,
     UserNotFoundException,
 )
-from apps.user.models.user import UserModel
+from apps.user.models.user import UserModel, RoleModel
 from config import settings
 from core.common_helpers import create_tokens, decrypt, validate_input_fields
 from core.db import db_session
@@ -102,7 +103,8 @@ class UserService:
 
         user = await self.session.scalar(
             select(UserModel).where(
-                and_(UserModel.email == email, UserModel.role == RoleType.USER)
+                and_(UserModel.email == email,
+                     UserModel.role_id.in_([2, 3]))  # Only allow students and faculty to login
             )
         )
         if not user:
@@ -112,11 +114,12 @@ class UserService:
         )
         if not verify:
             raise InvalidCredentialsException
-
-        return await create_tokens(user_id=user.id, role=user.role)
+        
+        print(user.role_id)
+        return await create_tokens(user_id=user.id, role_id=user.role_id)
 
     async def create_user(
-        self, request: Request, encrypted_data: str, encrypted_key: str, iv: str
+        self, request: Request, encrypted_data: str, encrypted_key: str, iv: str, role_name:str
     ) -> UserModel:
         """
         Create a new user.
@@ -159,6 +162,12 @@ class UserService:
         )
         if user:
             raise DuplicateEmailException
+        
+        role = await self.session.scalar(
+            select(RoleModel).where(RoleModel.role == role_name.upper())
+        )
+        if not role:
+            raise BadRequestError(message=constants.ROLE_NOT_FOUND)
 
         user = UserModel.create(
             first_name=first_name,
@@ -166,6 +175,7 @@ class UserService:
             phone=phone,
             password=await hash_password(password),
             email=email,
+            role_id=role.role_id,
         )
         self.session.add(user)
         return user
@@ -197,3 +207,53 @@ class UserService:
         if not searched_user:
             raise UserNotFoundException
         return searched_user
+
+    async def update_user_by_id(self, user_id:UUID):
+        pass
+
+    # hard delete
+    async def delete_user_by_id(self, user_id: UUID):
+        searched_user = await self.session.scalar(
+            select(UserModel)
+            .where(UserModel.id == user_id)
+        )
+
+        if not searched_user:
+            raise UserNotFoundException
+        
+        return await self.session.delete(searched_user)
+    
+    # soft delete
+    async def soft_delete_user_by_id(self, user_id: UUID):
+        searched_user = await self.session.scalar(
+            select(UserModel)
+            .where(UserModel.id == user_id, UserModel.is_deleted == False)
+        )
+
+        if not searched_user:
+            raise UserNotFoundException
+        
+        searched_user.is_deleted = True
+        return searched_user
+
+
+    async def get_my_courses(self, user_id: UUID)-> JSONResponse:
+        result = await self.session.execute(
+            select(UserModel).options(selectinload(UserModel.courses))
+            .where(UserModel.id==user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise UserNotFoundException
+        
+        if user.role_id != 2:
+            raise HTTPException(
+                status_code=400,
+                detail="User is not a student"
+            )
+
+        
+        courses = user.courses
+
+        return {"courses": courses}
