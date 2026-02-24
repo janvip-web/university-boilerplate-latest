@@ -13,6 +13,8 @@ from apps.user.exceptions import (
     DuplicateEmailException,
     InvalidCredentialsException,
     UserNotFoundException,
+    InvalidRequestException, 
+    WeakPasswordException
 )
 from apps.user.models.user import UserModel, RoleModel
 from config import settings
@@ -21,6 +23,8 @@ from core.db import db_session
 from core.exceptions import BadRequestError
 from core.types import RoleType
 from core.utils.hashing import hash_password, verify_password
+from core.utils import strong_password
+
 
 
 class UserService:
@@ -118,123 +122,123 @@ class UserService:
         print(user.role_id)
         return await create_tokens(user_id=user.id, role_id=user.role_id)
 
-    async def create_user(
-        self, request: Request, encrypted_data: str, encrypted_key: str, iv: str, role_name:str
-    ) -> UserModel:
-        """
-        Create a new user.
+    # async def create_user(
+    #     self, request: Request, encrypted_data: str, encrypted_key: str, iv: str, role_name:str
+    # ) -> UserModel:
+    #     """
+    #     Create a new user.
 
-        Args:
-            email (EmailStr): The user's email address.
-            password (str): The user's password.
-            first_name (str): The user's first name.
-            last_name (str): The user's last name.
-            phone (str): The user's phone number.
+    #     Args:
+    #         email (EmailStr): The user's email address.
+    #         password (str): The user's password.
+    #         first_name (str): The user's first name.
+    #         last_name (str): The user's last name.
+    #         phone (str): The user's phone number.
 
-        Returns:
-            UserModel: The created user model.
+    #     Returns:
+    #         UserModel: The created user model.
 
-        Raises:
-            DuplicateEmailException: If a user with the given email already exists.
-        """
-        decrypted_data = await decrypt(
-            rsa_key=request.app.state.rsa_key,
-            enc_data=encrypted_data,
-            encrypt_key=encrypted_key,
-            iv_input=iv,
-        )
-        decrypted_data = json.loads(decrypted_data)
+    #     Raises:
+    #         DuplicateEmailException: If a user with the given email already exists.
+    #     """
+    #     decrypted_data = await decrypt(
+    #         rsa_key=request.app.state.rsa_key,
+    #         enc_data=encrypted_data,
+    #         encrypt_key=encrypted_key,
+    #         iv_input=iv,
+    #     )
+    #     decrypted_data = json.loads(decrypted_data)
 
-        first_name = decrypted_data.get("first_name")
-        last_name = decrypted_data.get("last_name")
-        phone = decrypted_data.get("phone")
-        email = decrypted_data.get("email")
-        password = decrypted_data.get("password")
+    #     first_name = decrypted_data.get("first_name")
+    #     last_name = decrypted_data.get("last_name")
+    #     phone = decrypted_data.get("phone")
+    #     email = decrypted_data.get("email")
+    #     password = decrypted_data.get("password")
 
-        validate_input_fields(
-            first_name=first_name, email=email, phone=phone, password=password
-        )
+    #     validate_input_fields(
+    #         first_name=first_name, email=email, phone=phone, password=password
+    #     )
 
-        user = await self.session.scalar(
-            select(UserModel)
-            .options(load_only(UserModel.email))
-            .where(or_(UserModel.email == email, UserModel.phone == phone))
-        )
-        if user:
-            raise DuplicateEmailException
+    #     user = await self.session.scalar(
+    #         select(UserModel)
+    #         .options(load_only(UserModel.email))
+    #         .where(or_(UserModel.email == email, UserModel.phone == phone))
+    #     )
+    #     if user:
+    #         raise DuplicateEmailException
         
-        role = await self.session.scalar(
-            select(RoleModel).where(RoleModel.role == role_name.upper())
-        )
-        if not role:
-            raise BadRequestError(message=constants.ROLE_NOT_FOUND)
+    #     role = await self.session.scalar(
+    #         select(RoleModel).where(RoleModel.role == role_name.upper())
+    #     )
+    #     if not role:
+    #         raise BadRequestError(message=constants.ROLE_NOT_FOUND)
 
-        user = UserModel.create(
-            first_name=first_name,
-            last_name=last_name,
-            phone=phone,
-            password=await hash_password(password),
-            email=email,
-            role_id=role.role_id,
-        )
-        self.session.add(user)
-        return user
+    #     user = UserModel.create(
+    #         first_name=first_name,
+    #         last_name=last_name,
+    #         phone=phone,
+    #         password=await hash_password(password),
+    #         email=email,
+    #         role_id=role.role_id,
+    #     )
+    #     self.session.add(user)
+    #     return user
 
-    async def get_user_by_id(self, user_id: UUID):
-        """
-        Retrieve a user by their ID.
+    # async def get_user_by_id(self, user_id: UUID):
+    #     """
+    #     Retrieve a user by their ID.
 
-        Args:
-            user_id (UUID): The ID of the user to retrieve.
+    #     Args:
+    #         user_id (UUID): The ID of the user to retrieve.
 
-        Returns:
-            UserModel: The user model with the requested user's information.
-        """
+    #     Returns:
+    #         UserModel: The user model with the requested user's information.
+    #     """
 
-        searched_user = await self.session.scalar(
-            select(UserModel)
-            .options(
-                load_only(
-                    UserModel.id,
-                    UserModel.email,
-                    UserModel.first_name,
-                    UserModel.last_name,
-                )
-            )
-            .where(UserModel.id == user_id)
-        )
+    #     searched_user = await self.session.scalar(
+    #         select(UserModel)
+    #         .options(
+    #             load_only(
+    #                 UserModel.id,
+    #                 UserModel.email,
+    #                 UserModel.first_name,
+    #                 UserModel.last_name,
+    #             )
+    #         )
+    #         .where(UserModel.id == user_id)
+    #     )
 
-        if not searched_user:
-            raise UserNotFoundException
-        return searched_user
+    #     if not searched_user:
+    #         raise UserNotFoundException
+    #     return searched_user
 
-    async def update_user_by_id(self, user_id:UUID):
-        pass
+    # async def update_user_by_id(self, user_id:UUID):
+    #     pass
 
-    # hard delete
-    async def delete_user_by_id(self, user_id: UUID):
-        searched_user = await self.session.scalar(
-            select(UserModel)
-            .where(UserModel.id == user_id)
-        )
+    # # hard delete
+    # async def delete_user_by_id(self, user_id: UUID):
+    #     searched_user = await self.session.scalar(
+    #         select(UserModel)
+    #         .where(UserModel.id == user_id)
+    #     )
 
-        if not searched_user:
-            raise UserNotFoundException
+    #     if not searched_user:
+    #         raise UserNotFoundException
         
-        return await self.session.delete(searched_user)
+    #     return await self.session.delete(searched_user)
     
-    # soft delete
-    async def soft_delete_user_by_id(self, user_id: UUID):
-        searched_user = await self.session.scalar(
-            select(UserModel)
-            .where(UserModel.id == user_id, UserModel.is_deleted == False)
-        )
+    # # soft delete
+    # async def soft_delete_user_by_id(self, user_id: UUID):
+    #     searched_user = await self.session.scalar(
+    #         select(UserModel)
+    #         .where(UserModel.id == user_id, UserModel.is_deleted == False)
+    #     )
 
-        if not searched_user:
-            raise UserNotFoundException
+    #     if not searched_user:
+    #         raise UserNotFoundException
         
-        searched_user.is_deleted = True
-        return searched_user
+    #     searched_user.is_deleted = True
+    #     return searched_user
 
 
     async def get_my_courses(self, user_id: UUID)-> JSONResponse:
@@ -257,3 +261,63 @@ class UserService:
         courses = user.courses
 
         return {"courses": courses}
+    
+    async def change_password(
+        self,
+        request: Request,
+        user: UUID,
+        encrypted_data: str,
+        encrypted_key: str,
+        iv: str,
+    ):
+        """
+        Change the password for a user.
+
+        Args:
+            user (UUID): The ID of the user.
+            encrypted_data (str): The encrypted data containing the current and new passwords.
+            encrypted_key (str): The encrypted key used to encrypt the data.
+            iv (str): The initialization vector used to encrypt the data.
+
+        Returns:
+            UserModel: The updated user model with the new password.
+
+        Raises:
+            UserNotFoundException: If the user with the given UUID is not found.
+            InvalidCredentialsException: If the current password is incorrect.
+        """
+
+        decrypted_data = await decrypt(
+            rsa_key=request.app.state.rsa_key,
+            enc_data=encrypted_data,
+            encrypt_key=encrypted_key,
+            iv_input=iv,
+        )
+        decrypted_data = json.loads(decrypted_data)
+
+        current_password = decrypted_data.get("current_password")
+        new_password = decrypted_data.get("new_password")
+
+        if not current_password or not new_password:
+            raise InvalidRequestException
+
+        if not strong_password(new_password):
+            raise WeakPasswordException
+
+        current_user = await self.session.scalar(
+            select(UserModel).where(UserModel.id == user)
+        )
+
+        if not current_user:
+            raise UserNotFoundException
+
+        verify = await verify_password(
+            hashed_password=current_user.password, plain_password=current_password
+        )
+
+        if not verify:
+            raise InvalidCredentialsException
+
+        current_user.password = await hash_password(new_password)
+
+        return current_user

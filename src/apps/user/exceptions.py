@@ -32,6 +32,9 @@ class CourseNotFoundException(NotFoundError):
 
     message = constants.COURSE_NOT_FOUND
 
+class UserDeletedException(NotFoundError):
+    message = constants.USER_DELETED
+
 
 class EmptyDescriptionException(UnprocessableEntityError):
     """

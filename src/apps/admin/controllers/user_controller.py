@@ -171,7 +171,7 @@ async def get_user_by_id(
 
 @router.delete(
     "/{user_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_200_OK,
     name="delete user by id and admin",
     description="delete user by id and admin",  
     operation_id="delete_user_by_id_and_admin",
@@ -179,9 +179,9 @@ async def get_user_by_id(
 async def soft_delete_user_by_id(
     user_id: Annotated[UUID, Path()],
     service: Annotated[AdminUserService, Depends()]
-) -> JSONResponse:
-    await service.soft_delete_user(user_id=user_id)
-    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content={"message": "User deleted successfully"})
+) -> BaseResponse:
+    return BaseResponse(data=await service.soft_delete_user(user_id=user_id))
+    
 
 @router.patch(
     "/{user_id}/restore",
@@ -217,7 +217,7 @@ async def restore_user_by_admin(
 )
 async def update_user_status(
     user_id: Annotated[UUID, Path()],
-    is_activated: bool,
+    is_activated: Annotated[bool, Body()],
     service: Annotated[AdminUserService, Depends()]
 ) -> BaseResponse[BaseUserResponse]:
     """

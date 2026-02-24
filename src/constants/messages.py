@@ -55,3 +55,5 @@ EMAIL_FIELD_REQUIRED = "Email field is required."
 PASSWORD_FIELD_REQUIRED = "Password field is required."
 
 ROLE_NOT_FOUND = "Role not found"
+
+USER_DELETED = 'User deleted Successfully'

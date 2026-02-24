@@ -19,7 +19,8 @@ from apps.user.exceptions import (
     InvalidRequestException,
     UserNotFoundException,
     WeakPasswordException,
-    CourseNotFoundException
+    CourseNotFoundException,
+    UserDeletedException
 )
 from apps.user.models.user import UserModel, RoleModel
 from config import settings
@@ -389,7 +390,8 @@ class AdminUserService:
             raise UserNotFoundException
         
         searched_user.is_deleted = True
-        return searched_user
+        # return searched_user
+        return {"message": "User deleted successfully"}
     
     async def update_user_status(self, user_id: UUID, is_activated: bool):
         user = await self.session.scalar(
@@ -467,13 +469,8 @@ class AdminUserService:
 
         return delete_cookies(response=response, role_id=role_id)
     
+    
     async def assign_faculty_to_course(self, req: AssignFacultyRequest):
-        course = await self.session.scalar(
-            select(CourseModel).where(CourseModel.id == req.course_id)
-        )
-        if not course:
-            raise CourseNotFoundException
-        
         faculty = await self.session.scalar(
             select(UserModel).where(UserModel.id == req.faculty_id))
         
@@ -483,7 +480,17 @@ class AdminUserService:
         if faculty.role_id != 3:
             raise BadRequestError(message="User is not a faculty")
         
-        course.faculty_id = req.faculty_id
+        result = await self.session.execute(
+            select(CourseModel).where(CourseModel.id.in_(req.course_id))
+        )
+
+        courses = result.scalars().all() 
+        if len(courses) != len(req.course_id):
+            raise CourseNotFoundException
+
+    # 4️⃣ Assign faculty to each course
+        for course in courses:
+            course.faculty_id = req.faculty_id
 
         return {"message": "Faculty assigned to course successfully"}
     
