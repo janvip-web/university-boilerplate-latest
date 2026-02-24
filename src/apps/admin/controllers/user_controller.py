@@ -13,7 +13,7 @@ from apps.user.schemas.response import BaseUserResponse
 from apps.admin.services import AdminUserService
 from core.auth import AdminHasPermission
 from core.utils.schema import BaseResponse
-from apps.admin.schemas.student_course_response import StudentCourseResponse, FacultyCourseResponse
+from apps.admin.schemas.student_course_response import StudentWithCourseResponse, FacultyCourseResponse
 
 
 router = APIRouter(prefix="/admin/user", tags=["User Control by Admin"], dependencies=[Depends(AdminHasPermission())])
@@ -111,8 +111,9 @@ async def get_users(
     operation_id="get_students_with_courses",
 )
 async def get_students_with_courses(
-    service: Annotated[AdminUserService, Depends()]
-) -> BaseResponse[List[StudentCourseResponse]]:
+    service: Annotated[AdminUserService, Depends()],
+    language: Annotated[str, Query()]
+) -> BaseResponse[List[StudentWithCourseResponse]]:
     """
     Get a list of students along with the courses they are enrolled in.
 
@@ -122,7 +123,7 @@ async def get_students_with_courses(
     Returns:
         BaseResponse[List[StudentCourseResponse]]: A list of students with their enrolled courses.
     """
-    return BaseResponse(data=await service.get_student_with_courses())
+    return BaseResponse(data=await service.get_student_with_courses(language))
 
 @router.get(
     "/faculty-with-courses",  
@@ -132,7 +133,8 @@ async def get_students_with_courses(
     operation_id="get_faculty_with_courses",
 )
 async def get_faculty_with_courses(
-    service: Annotated[AdminUserService, Depends()]
+    service: Annotated[AdminUserService, Depends()],
+    language: Annotated[str, Query()]
 ) -> BaseResponse[List[FacultyCourseResponse]]:
     """
     Get a list of faculty along with the courses they are teaching.
@@ -143,7 +145,7 @@ async def get_faculty_with_courses(
     Returns:
         BaseResponse[List[FacultyCourseResponse]]: A list of faculty with their teaching courses.
     """
-    return BaseResponse(data=await service.get_faculty_with_courses())
+    return BaseResponse(data=await service.get_faculty_with_courses(language))
 
 
 @router.get(

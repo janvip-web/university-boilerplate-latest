@@ -131,7 +131,8 @@ class AdminUserService:
                 UserModel.last_name,
                 UserModel.email,
                 UserModel.phone,
-                UserModel.role_id
+                UserModel.role_id,
+                UserModel.preferred_language
             )
         )
 
@@ -257,6 +258,8 @@ class AdminUserService:
         email = decrypted_data.get("email")
         password = decrypted_data.get("password")
         role_name = decrypted_data.get("role_name")
+        preferred_language = decrypted_data.get("preferred_language")
+        
 
         validate_input_fields(
             first_name=first_name, email=email, phone=phone, password=password
@@ -283,6 +286,7 @@ class AdminUserService:
             password=await hash_password(password),
             email=email,
             role_id=role.role_id,
+            preferred_language=preferred_language
         )
         self.session.add(user)
         return user
@@ -316,6 +320,7 @@ class AdminUserService:
         first_name = decrypted_data.get("first_name")
         last_name = decrypted_data.get("last_name")
         phone = decrypted_data.get("phone")
+        preferred_langugae = decrypted_data.get("preferred_language")
 
         # validate_input_fields(first_name=first_name)
 
@@ -330,6 +335,8 @@ class AdminUserService:
             user.last_name = last_name
         if phone:
             user.phone = phone
+        if preferred_langugae:
+            user.preferred_language = preferred_langugae
 
         return user
     
@@ -495,21 +502,74 @@ class AdminUserService:
         return {"message": "Faculty assigned to course successfully"}
     
 
-    async def get_student_with_courses(self):
+    async def get_student_with_courses(self, language:str):
         result = await self.session.scalars(
-            select(UserModel).options(selectinload(UserModel.courses))
+            select(UserModel).options(selectinload(UserModel.courses)
+                                      .selectinload(CourseModel.translations))
             .where(UserModel.role_id == 2, UserModel.is_deleted == False)
         )
         students = result.all()
+        # Manual language selection
+        for student in students:
+            for course in student.courses:
+            
+            # find translation for requested language
+                translation = next(
+                    (
+                        t for t in course.translations
+                        if t.language_code == language
+                    ),
+                    None
+                )
+
+                # fallback to English
+                if not translation:
+                    translation = next(
+                        (
+                            t for t in course.translations
+                            if t.language_code == "en"
+                        ),
+                        None
+                    )
+
+                # override course_name dynamically
+                if translation:
+                    course.course_name = translation.course_name
 
         return students
     
 
-    async def get_faculty_with_courses(self):
+    async def get_faculty_with_courses(self,language:str):
         result =await self.session.scalars(
-            select(UserModel).options(selectinload(UserModel.faculty_courses))
+            select(UserModel).options(selectinload(UserModel.faculty_courses)
+                                      .selectinload(CourseModel.translations))
             .where(UserModel.role_id == 3, UserModel.is_deleted == False)
         )
-        faculty = result.all()
-        return faculty
+        faculty_members = result.all()
+        for faculty in faculty_members:
+            for course in faculty.faculty_courses:
+
+                # 1️⃣ Try requested language
+                translation = next(
+                    (
+                        t for t in course.translations
+                        if t.language_code == language
+                    ),
+                    None
+                )
+
+                # 2️⃣ Fallback to English
+                if not translation:
+                    translation = next(
+                        (
+                            t for t in course.translations
+                            if t.language_code == "en"
+                        ),
+                        None
+                    )
+
+                # 3️⃣ Override course name
+                if translation:
+                    course.course_name = translation.course_name
+        return faculty_members
     

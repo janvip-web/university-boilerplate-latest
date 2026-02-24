@@ -6,8 +6,8 @@ from fastapi.responses import JSONResponse
 from fastapi_pagination import Page, Params
 
 from apps.admin.schemas.admin_user_response import AdminListUsersResponse
-from apps.course.schemas.request import CourseRequest
-from apps.course.schemas.response import CourseResponse
+from apps.course.schemas.request import CourseRequest, CourseTranslationRequest
+from apps.course.schemas.response import CourseResponse, CourseTranslationResponse
 from apps.admin.services import AdminCourseService
 from core.auth import AdminHasPermission
 from core.utils.schema import BaseResponse
@@ -39,6 +39,24 @@ async def create_course(
     return BaseResponse(
         data=await service.create_course(body)
     )
+
+@router.post(
+        "/translation",
+        name="Translator",
+        description="hindi translation",
+        operation_id="hindi_translation",
+        status_code=status.HTTP_200_OK
+)
+async def tanslator(
+    course_id: Annotated[UUID, Query()],
+    request: Annotated[CourseTranslationRequest, Body()],
+    service: Annotated[AdminCourseService, Depends()]
+)-> BaseResponse[CourseTranslationResponse]:
+    return BaseResponse(
+        data = await service.add_course_translation(course_id=course_id, request=request)
+    )
+
+
 
 @router.get(
     "/courses",

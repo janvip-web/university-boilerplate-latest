@@ -5,9 +5,10 @@ from typing import Self
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db import Base
-from core.types import RoleType
+from core.enum import LanguageEnum
 from core.utils.mixins import TimeStampMixin, UUIDPrimaryKeyMixin
 from sqlalchemy import ForeignKey
+from sqlalchemy import Enum
 
 
 class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
@@ -36,9 +37,11 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
     is_deleted: Mapped[bool] = mapped_column(default=False, nullable=False)
     is_activated: Mapped[bool] = mapped_column(default=True, nullable=False)
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.role_id"))
+    preferred_language: Mapped[LanguageEnum] = mapped_column(Enum(LanguageEnum, name="languageenum",create_type=False,
+                                                                  values_callable=lambda enum: [e.value for e in enum]), nullable=True)
 
     role_ref: Mapped["RoleModel"] = relationship("RoleModel", back_populates="users")
-    courses = relationship("CourseModel", secondary="association", back_populates="students")
+    courses = relationship("CourseModel", secondary="association", back_populates="students", lazy="selectin")
     faculty_courses = relationship("CourseModel", back_populates="faculty")
 
     def __str__(self) -> str:
@@ -58,6 +61,7 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
         email: str,
         password: str,
         role_id: int,
+        preferred_language: LanguageEnum
     ) -> Self:
         """
         Create a new user.
@@ -77,7 +81,8 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
             email=email.lower(),
             phone=phone,
             password=password,
-            role_id=role_id
+            role_id=role_id,
+            preferred_language=preferred_language
         )
     
 

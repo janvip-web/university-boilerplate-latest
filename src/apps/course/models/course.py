@@ -4,9 +4,11 @@ from typing import Self, TYPE_CHECKING,List
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy import Enum
 
 from core.db import Base
 from core.utils.mixins import UUIDPrimaryKeyMixin
+from core.enum import LanguageEnum
 
 
 class CourseModel(Base, UUIDPrimaryKeyMixin):
@@ -17,8 +19,10 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
     course_description: Mapped[str] = mapped_column(nullable=True)
     faculty_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
 
-    students = relationship("UserModel", secondary="association", back_populates="courses")
+
+    students = relationship("UserModel", secondary="association", back_populates="courses", lazy="selectin")
     faculty = relationship("UserModel", back_populates="faculty_courses")
+    translations: Mapped[List["CourseTranslationModel"]] = relationship("CourseTranslationModel", back_populates="course", cascade="all, delete-orphan")
 
     def __str__(self):
         return f"<Course {self.course_name}>"
@@ -38,7 +42,30 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
         )
     
 
+class CourseTranslationModel(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "course_translations"
 
+    course_id: Mapped[UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    course_name: Mapped[str] = mapped_column(index=True)
+    language_code: Mapped[LanguageEnum] = mapped_column(
+        Enum(
+            LanguageEnum,
+            name="languageenum",   # must match existing DB enum type
+            create_type=False ,     # 🔥 prevents duplicate enum creation
+            values_callable=lambda enum: [e.value for e in enum]
+        ),
+        nullable=False )
+
+    __table_args__ = (
+            UniqueConstraint("course_id", "language_code", name="uq_course_language"),
+    )
+
+    course: Mapped["CourseModel"] = relationship("CourseModel", back_populates="translations")
+
+    # @classmethod
+    # def create(
+    #     cls
+    # )
 
 
 class Association(Base, UUIDPrimaryKeyMixin):

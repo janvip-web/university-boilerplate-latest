@@ -9,16 +9,15 @@ from sqlalchemy import and_, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
-from apps.course.models.course import CourseModel
-from apps.course.schemas.request import CourseRequest
+from apps.course.models.course import CourseModel, CourseTranslationModel
+from apps.course.schemas.request import CourseRequest, CourseTranslationRequest
 import constants
 from apps.user.exceptions import (
     CourseNotFoundException,
 )
-
-from config import settings
+from core.exceptions import BadRequestError
 from core.db import db_session
-from core.exceptions import BadRequestError, UnauthorizedError
+from core.enum import LanguageEnum
 
 
 
@@ -35,10 +34,45 @@ class AdminCourseService:
         course = CourseModel.create(
             course_name=course_name,
             course_credit=course_credit,
-            course_description=course_description
+            course_description=course_description,
         )
         self.session.add(course)
+
+        course.translations = [
+            CourseTranslationModel(
+                language_code = LanguageEnum.EN,
+                course_name = course_name
+            )
+        ]
+        self.session.add(course)
         return course
+    
+    async def add_course_translation(self, course_id:UUID, request:CourseTranslationRequest):
+        course = await self.session.scalar(
+            select(CourseModel).where(CourseModel.id == course_id)
+        )
+        if not course:
+            raise CourseNotFoundException
+        
+        existing_translations = await self.session.scalar(
+            select(CourseTranslationModel).where(
+            CourseTranslationModel.course_id == course_id,
+            CourseTranslationModel.language_code == request.language_code
+            )
+        )
+        if existing_translations:
+            raise BadRequestError(
+            message=f"Translation already exists for language {request.language_code}"
+        )
+        translation = CourseTranslationModel(
+            course_id=course_id,
+            language_code = request.language_code,
+            course_name = request.course_name
+        )
+        self.session.add(translation)
+        return translation
+
+
     
     async def get_all_courses(self, param: Params) -> Page[CourseModel]:
         stmt = select(CourseModel)

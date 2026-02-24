@@ -17,6 +17,8 @@ from apps.user.exceptions import (
     WeakPasswordException
 )
 from apps.user.models.user import UserModel, RoleModel
+from apps.course.models.course import CourseModel
+from apps.course.schemas.response import StudentCourseResponse
 from config import settings
 from core.common_helpers import create_tokens, decrypt, validate_input_fields
 from core.db import db_session
@@ -241,12 +243,13 @@ class UserService:
     #     return searched_user
 
 
-    async def get_my_courses(self, user_id: UUID)-> JSONResponse:
-        result = await self.session.execute(
-            select(UserModel).options(selectinload(UserModel.courses))
+    async def get_my_courses(self, user_id: UUID):
+        result = await self.session.scalars(
+            select(UserModel).options(selectinload(UserModel.courses)
+                                      .selectinload(CourseModel.translations))
             .where(UserModel.id==user_id)
         )
-        user = result.scalar_one_or_none()
+        user = result.first()
 
         if not user:
             raise UserNotFoundException
@@ -256,12 +259,31 @@ class UserService:
                 status_code=400,
                 detail="User is not a student"
             )
-
         
-        courses = user.courses
+        preferred_lang = user.preferred_language
+        response_courses = []
 
-        return {"courses": courses}
-    
+        for course in user.courses:
+
+            # find translation
+            translation = next(
+                (t for t in course.translations if t.language_code == preferred_lang),
+                None
+            ) or next(
+                (t for t in course.translations if t.language_code == 'en'),
+                None
+            )
+
+            response_courses.append(
+                StudentCourseResponse(
+                    id=course.id,
+                    course_name=translation.course_name if translation else course.course_name,
+                    course_credit=course.course_credit,
+                )
+            )
+
+        return response_courses
+        
     async def change_password(
         self,
         request: Request,

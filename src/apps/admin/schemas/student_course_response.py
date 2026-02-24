@@ -1,14 +1,14 @@
-from apps.course.schemas.response import CourseResponse
+from apps.course.schemas.response import CourseResponse, StudentCourseResponse
 from core.utils import CamelCaseModel
 
-class StudentCourseResponse(CamelCaseModel):
+class StudentWithCourseResponse(CamelCaseModel):
     id: str
     first_name: str
     last_name: str
-    courses: list[CourseResponse]
+    courses: list[StudentCourseResponse]
 
 class FacultyCourseResponse(CamelCaseModel):
     id: str
     first_name: str
     last_name: str
-    faculty_courses: list[CourseResponse]
+    faculty_courses: list[StudentCourseResponse]

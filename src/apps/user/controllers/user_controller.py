@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, List
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Request, status
@@ -15,6 +15,7 @@ from core.utils.schema import BaseResponse
 from core.utils.set_cookies import set_auth_cookies
 import jwt
 from config import settings
+from apps.course.schemas.response import StudentCourseResponse
 
 router = APIRouter(prefix="/api/user", tags=["User"])
 
@@ -219,7 +220,7 @@ async def get_self_handler(
 async def get_my_courses(
     service: Annotated[UserService , Depends()],
     current_user: Annotated[UserModel, Depends(HasPermission(role_name="STUDENT"))]
-):
+)-> List[StudentCourseResponse]:
     return await service.get_my_courses(current_user.id)
 
 @router.patch(
