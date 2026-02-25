@@ -4,14 +4,14 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Query
 from fastapi.responses import JSONResponse
-from fastapi_pagination import Page, Params, response
+from fastapi_pagination import Page, Params, paginate, create_page
 from fastapi_pagination.ext.sqlalchemy import paginate
 import jwt
-from sqlalchemy import and_, select, or_
+from sqlalchemy import and_, select, or_ , update, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only, selectinload
+from sqlalchemy.orm import load_only, selectinload, Load, joinedload
 
-from apps.course.models.course import CourseModel
+from apps.course.models.course import CourseModel, Association
 import constants
 from apps.user.exceptions import (
     DuplicateEmailException,
@@ -32,6 +32,7 @@ from core.utils import strong_password
 from core.utils.hashing import hash_password, verify_password
 from core.utils.set_cookies import delete_cookies
 from apps.admin.schemas.assign_faculty_request import AssignFacultyRequest
+from apps.admin.schemas.student_course_response import StudentRankResponse
 
 
 class AdminUserService:
@@ -125,17 +126,21 @@ class AdminUserService:
         Raises:
             UserNotFoundException: If the user with the given UUID is not found.
         """
-        query = select(UserModel).where(UserModel.is_deleted == False).options(
-            load_only(
+        query = (select(UserModel)
+                 .join(UserModel.role_ref)
+                .where(UserModel.is_deleted.is_(False))
+            .options(
+            Load(UserModel).load_only(
                 UserModel.first_name,
                 UserModel.last_name,
                 UserModel.email,
                 UserModel.phone,
                 UserModel.role_id,
-                UserModel.preferred_language
-            )
-        )
-
+                UserModel.preferred_language,
+            ),
+            joinedload(UserModel.role_ref).load_only(RoleModel.role)
+        ))
+    
         if role_id is not None:
             query = query.where(UserModel.role_id == role_id)
 
@@ -317,28 +322,48 @@ class AdminUserService:
         )
         decrypted_data = json.loads(decrypted_data)
 
-        first_name = decrypted_data.get("first_name")
-        last_name = decrypted_data.get("last_name")
-        phone = decrypted_data.get("phone")
-        preferred_langugae = decrypted_data.get("preferred_language")
+        # first_name = decrypted_data.get("first_name")
+        # last_name = decrypted_data.get("last_name")
+        # phone = decrypted_data.get("phone")
+        # preferred_langugae = decrypted_data.get("preferred_language")
 
         # validate_input_fields(first_name=first_name)
+        allowed_fields = {"first_name", "last_name", "phone", "preferred_language"}
 
-        user = await self.session.scalar(
-            select(UserModel).where(UserModel.id == user_id)
+        update_data = {
+            key: value
+            for key, value in decrypted_data.items()
+            if key in allowed_fields and value is not None
+        }
+
+        if not update_data:
+            None
+
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id)
+            .values(**update_data)
+            .returning(UserModel)
         )
-        if not user:
+        updated_user = await self.session.scalar(stmt)
+        # user = await self.session.scalar(
+        #     select(UserModel).where(UserModel.id == user_id)
+        # )
+
+        if not updated_user:
             raise UserNotFoundException
+        # if not user:
+        #     raise UserNotFoundException
 
-        user.first_name = first_name
-        if last_name:
-            user.last_name = last_name
-        if phone:
-            user.phone = phone
-        if preferred_langugae:
-            user.preferred_language = preferred_langugae
+        # user.first_name = first_name
+        # if last_name:
+        #     user.last_name = last_name
+        # if phone:
+        #     user.phone = phone
+        # if preferred_langugae:
+        #     user.preferred_language = preferred_langugae
 
-        return user
+        return updated_user
     
     async def get_user_by_id(self, user_id: UUID):
         """
@@ -361,7 +386,7 @@ class AdminUserService:
                     UserModel.last_name,
                 )
             )
-            .where(UserModel.id == user_id, UserModel.is_deleted == False)
+            .where(UserModel.id == user_id, UserModel.is_deleted.is_(False))
         )
 
         if not searched_user:
@@ -381,63 +406,42 @@ class AdminUserService:
         Raises:
             UserNotFoundException: If the user with the given UUID is not found.
         """
+        stmt = (update(UserModel).where(UserModel.id == user_id, UserModel.is_deleted.is_(False))
+                .values(is_deleted = True))
 
-        searched_user = await self.session.scalar(
-            select(UserModel)
-            .options(
-                load_only(
-                    UserModel.id,
-                    UserModel.is_deleted,
-                )
-            )
-            .where(UserModel.id == user_id)
-        )
-
-        if not searched_user or searched_user.is_deleted == True:
+        result = await self.session.execute(stmt)
+        if result.rowcount == 0:
             raise UserNotFoundException
-        
-        searched_user.is_deleted = True
         # return searched_user
         return {"message": "User deleted successfully"}
     
+    
     async def update_user_status(self, user_id: UUID, is_activated: bool):
-        user = await self.session.scalar(
-            select(UserModel)
-            .options(
-                load_only(
-                    UserModel.id,
-                    UserModel.is_activated,
-                )
-            )
-            .where(UserModel.id == user_id, UserModel.is_deleted == False)
-        )
 
-        if not user:
+        stmt = (update(UserModel).where(UserModel.id == user_id, UserModel.is_deleted.is_(False))
+                .values(is_activated = is_activated)
+                .returning(UserModel.id, UserModel.is_activated)
+                )
+        updated_user = await self.session.scalar(stmt)
+
+        if not updated_user:
             raise UserNotFoundException
-        
-        user.is_activated = is_activated
-        return user
+
+        return updated_user
+    
     
     async def restore_user(self, user_id: UUID):
-        user = await self.session.scalar(
-            select(UserModel)
-            .options(
-                load_only(
-                    UserModel.id,
-                    UserModel.is_deleted,
-                )
-            )
-            .where(UserModel.id == user_id, UserModel.is_deleted == True)
-        )
 
-        if not user:
+        stmt=(update(UserModel).where(UserModel.id == user_id, UserModel.is_deleted.is_(True))
+             .values(is_deleted=False)
+             .returning(UserModel.id)
+             )
+        restored_user = await self.session.scalar(stmt)
+
+        if not restored_user:
             raise UserNotFoundException
-        
-        if not user.is_deleted:
-            raise BadRequestError(message="user is not deleted")
-        
-        user.is_deleted = False
-        return user
+
+        return restored_user
     
 
     async def logout(self, request: Request)-> JSONResponse:
@@ -503,6 +507,7 @@ class AdminUserService:
     
 
     async def get_student_with_courses(self, language:str):
+
         result = await self.session.scalars(
             select(UserModel).options(selectinload(UserModel.courses)
                                       .selectinload(CourseModel.translations))
@@ -536,6 +541,18 @@ class AdminUserService:
                 if translation:
                     course.course_name = translation.course_name
 
+        return students
+    
+    async def get_course_with_more_than_one_student(self):
+        subq = (
+            select(Association.course_id)
+            .group_by(Association.course_id)
+            .having(func.count(Association.user_id)>1)
+            .subquery()
+        )
+        stmt = select(CourseModel.course_name).where(CourseModel.id.in_(subq))
+        result = await self.session.scalars(stmt)
+        students = result.all()
         return students
     
 
@@ -573,3 +590,24 @@ class AdminUserService:
                     course.course_name = translation.course_name
         return faculty_members
     
+    async def rank_student(self, params:Params) :
+        stmt = (select(UserModel.id, 
+                      UserModel.first_name,
+                      UserModel.last_name,
+                      func.count(Association.course_id).label("total_courses"),
+                      func.rank()
+                      .over(order_by=func.count(Association.course_id).desc())
+                      .label("rank"),)
+                      .join(Association, Association.user_id == UserModel.id)
+                      .where(
+                          UserModel.role_id == 2,
+                          UserModel.is_deleted.is_(False)
+                      )
+                      .group_by(UserModel.id)
+                      )
+        page = await paginate(self.session, stmt, params)
+
+    # convert Row → dict
+        page.items = [dict(item._mapping) for item in page.items]
+
+        return page

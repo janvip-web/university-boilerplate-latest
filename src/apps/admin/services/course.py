@@ -5,13 +5,12 @@ from uuid import UUID
 from fastapi import Depends, Request, Query
 from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlalchemy import paginate
-from sqlalchemy import and_, select, or_
+from sqlalchemy import and_, select, or_, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, selectinload
 
 from apps.course.models.course import CourseModel, CourseTranslationModel
 from apps.course.schemas.request import CourseRequest, CourseTranslationRequest
-import constants
 from apps.user.exceptions import (
     CourseNotFoundException,
 )
@@ -88,25 +87,28 @@ class AdminCourseService:
         return course
     
     async def update_course_by_id(self, course_id:UUID, course_req:CourseRequest):
-        course = await self.session.scalar(
-            select(CourseModel).where(CourseModel.id == course_id)
-        )
-        if course == None:
+
+        stmt = (update(CourseModel).where(CourseModel.id == course_id)
+                .values(
+                    course_name = course_req.course_name,
+                    course_credit = course_req.course_credit,
+                    course_description = course_req.course_description
+                )
+                .returning(CourseModel))
+        
+        updated_course = await self.session.scalar(stmt)
+
+        if updated_course == None:
             raise CourseNotFoundException
         
-        course.course_name = course_req.course_name
-        course.course_credit = course_req.course_credit
-        course.course_description = course_req.course_description
-
-        self.session.add(course)
-        return course
+        return updated_course
+    
     
     async def delete_course_by_id(self, course_id:UUID):
-        course = await self.session.scalar(
-            select(CourseModel).where(CourseModel.id == course_id)
-        )
-        if course == None:
+
+        stmt = delete(CourseModel).where(CourseModel.id == course_id)
+        course = await self.session.execute(stmt)
+        if course.rowcount == 0:
             raise CourseNotFoundException
-        
-        await self.session.delete(course)
-        return course
+
+        return {"message": "course deleted successfully"}

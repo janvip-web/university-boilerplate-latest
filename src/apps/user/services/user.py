@@ -2,9 +2,9 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, desc, func, join
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
@@ -17,7 +17,7 @@ from apps.user.exceptions import (
     WeakPasswordException
 )
 from apps.user.models.user import UserModel, RoleModel
-from apps.course.models.course import CourseModel
+from apps.course.models.course import CourseModel, CourseTranslationModel, Association
 from apps.course.schemas.response import StudentCourseResponse
 from config import settings
 from core.common_helpers import create_tokens, decrypt, validate_input_fields
@@ -124,141 +124,32 @@ class UserService:
         print(user.role_id)
         return await create_tokens(user_id=user.id, role_id=user.role_id)
 
-    # async def create_user(
-    #     self, request: Request, encrypted_data: str, encrypted_key: str, iv: str, role_name:str
-    # ) -> UserModel:
-    #     """
-    #     Create a new user.
+    async def _get_user_with_courses(self, user_id: UUID) -> UserModel:
 
-    #     Args:
-    #         email (EmailStr): The user's email address.
-    #         password (str): The user's password.
-    #         first_name (str): The user's first name.
-    #         last_name (str): The user's last name.
-    #         phone (str): The user's phone number.
-
-    #     Returns:
-    #         UserModel: The created user model.
-
-    #     Raises:
-    #         DuplicateEmailException: If a user with the given email already exists.
-    #     """
-    #     decrypted_data = await decrypt(
-    #         rsa_key=request.app.state.rsa_key,
-    #         enc_data=encrypted_data,
-    #         encrypt_key=encrypted_key,
-    #         iv_input=iv,
-    #     )
-    #     decrypted_data = json.loads(decrypted_data)
-
-    #     first_name = decrypted_data.get("first_name")
-    #     last_name = decrypted_data.get("last_name")
-    #     phone = decrypted_data.get("phone")
-    #     email = decrypted_data.get("email")
-    #     password = decrypted_data.get("password")
-
-    #     validate_input_fields(
-    #         first_name=first_name, email=email, phone=phone, password=password
-    #     )
-
-    #     user = await self.session.scalar(
-    #         select(UserModel)
-    #         .options(load_only(UserModel.email))
-    #         .where(or_(UserModel.email == email, UserModel.phone == phone))
-    #     )
-    #     if user:
-    #         raise DuplicateEmailException
-        
-    #     role = await self.session.scalar(
-    #         select(RoleModel).where(RoleModel.role == role_name.upper())
-    #     )
-    #     if not role:
-    #         raise BadRequestError(message=constants.ROLE_NOT_FOUND)
-
-    #     user = UserModel.create(
-    #         first_name=first_name,
-    #         last_name=last_name,
-    #         phone=phone,
-    #         password=await hash_password(password),
-    #         email=email,
-    #         role_id=role.role_id,
-    #     )
-    #     self.session.add(user)
-    #     return user
-
-    # async def get_user_by_id(self, user_id: UUID):
-    #     """
-    #     Retrieve a user by their ID.
-
-    #     Args:
-    #         user_id (UUID): The ID of the user to retrieve.
-
-    #     Returns:
-    #         UserModel: The user model with the requested user's information.
-    #     """
-
-    #     searched_user = await self.session.scalar(
-    #         select(UserModel)
-    #         .options(
-    #             load_only(
-    #                 UserModel.id,
-    #                 UserModel.email,
-    #                 UserModel.first_name,
-    #                 UserModel.last_name,
-    #             )
-    #         )
-    #         .where(UserModel.id == user_id)
-    #     )
-
-    #     if not searched_user:
-    #         raise UserNotFoundException
-    #     return searched_user
-
-    # async def update_user_by_id(self, user_id:UUID):
-    #     pass
-
-    # # hard delete
-    # async def delete_user_by_id(self, user_id: UUID):
-    #     searched_user = await self.session.scalar(
-    #         select(UserModel)
-    #         .where(UserModel.id == user_id)
-    #     )
-
-    #     if not searched_user:
-    #         raise UserNotFoundException
-        
-    #     return await self.session.delete(searched_user)
-    
-    # # soft delete
-    # async def soft_delete_user_by_id(self, user_id: UUID):
-    #     searched_user = await self.session.scalar(
-    #         select(UserModel)
-    #         .where(UserModel.id == user_id, UserModel.is_deleted == False)
-    #     )
-
-    #     if not searched_user:
-    #         raise UserNotFoundException
-        
-    #     searched_user.is_deleted = True
-    #     return searched_user
-
-
-    async def get_my_courses(self, user_id: UUID):
         result = await self.session.scalars(
-            select(UserModel).options(selectinload(UserModel.courses)
-                                      .selectinload(CourseModel.translations))
-            .where(UserModel.id==user_id)
+            select(UserModel)
+            .options(
+                selectinload(UserModel.courses)
+                .selectinload(CourseModel.translations)
+            )
+            .where(UserModel.id == user_id)
         )
+
         user = result.first()
 
         if not user:
-            raise UserNotFoundException
-        
+            raise UserNotFoundException()
+
         if user.role_id != 2:
             raise HTTPException(
                 status_code=400,
                 detail="User is not a student"
             )
+
+        return user
+
+    async def get_my_courses(self, user_id: UUID):
+        user = await self._get_user_with_courses(user_id=user_id)
         
         preferred_lang = user.preferred_language
         response_courses = []
@@ -283,6 +174,48 @@ class UserService:
             )
 
         return response_courses
+    
+    async def get_recent_course(self, user_id, limit: int = 5):
+        user = await self._get_user_with_courses(user_id=user_id)
+
+
+
+        preferred_lang = user.preferred_language
+
+        enrolled_course_ids = [course.id for course in user.courses]
+
+        stmt = (
+            select(CourseModel)
+            .where(~CourseModel.id.in_(enrolled_course_ids))
+            .options(selectinload(CourseModel.translations))
+            .order_by(desc(CourseModel.created_at))
+            .limit(limit)
+        )
+
+        result = await self.session.execute(stmt)
+        courses = result.scalars().all()
+
+        response = []
+
+        for course in courses:
+
+            translation = next(
+                (t for t in course.translations if t.language_code == preferred_lang),
+                None
+            ) or next(
+                (t for t in course.translations if t.language_code == "en"),
+                None
+            )
+
+            response.append(
+                StudentCourseResponse(
+                    id=course.id,
+                    course_name=translation.course_name if translation else course.course_name,
+                    course_credit=course.course_credit
+                )
+            )
+
+        return response
         
     async def change_password(
         self,
@@ -343,3 +276,31 @@ class UserService:
         current_user.password = await hash_password(new_password)
 
         return current_user
+    
+    async def search_course(self, search:str):
+          
+        stmt = (
+            select(CourseModel)
+            .where(
+                or_(
+                    CourseModel.course_name.ilike(f"%{search}%"),
+                CourseModel.translations.any(CourseTranslationModel.course_name.ilike(f"%{search}%"))
+                )
+            )
+            .options(selectinload(CourseModel.translations))
+            .distinct()
+        )
+
+        result = await self.session.execute(stmt)
+        courses = result.scalars().all()
+
+        if not courses:
+            raise HTTPException(
+            status_code=404,
+            detail="Course not present"
+        )
+
+        return courses
+
+
+    

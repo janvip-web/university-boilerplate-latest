@@ -1,7 +1,7 @@
 from typing import Annotated, List
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Path, Request, status
+from fastapi import APIRouter, Body, Depends, Path, Request, status, Query
 from fastapi.responses import JSONResponse
 
 import constants
@@ -15,7 +15,7 @@ from core.utils.schema import BaseResponse
 from core.utils.set_cookies import set_auth_cookies
 import jwt
 from config import settings
-from apps.course.schemas.response import StudentCourseResponse
+from apps.course.schemas.response import StudentCourseResponse, CourseResponse
 
 router = APIRouter(prefix="/api/user", tags=["User"])
 
@@ -262,4 +262,38 @@ async def change_password(
         data=await service.change_password(
             request=request, **body.model_dump(), user=user.id
         )
+    )
+
+@router.get(
+    "/search-course",
+    name="search course",
+    description="search course based on course name",
+    operation_id="search_course",
+    status_code=status.HTTP_200_OK
+)
+async def search_course(
+    search: Annotated[str, Query()],
+    service: Annotated[UserService, Depends()]
+)-> BaseResponse[List[CourseResponse]]:
+    return BaseResponse(
+        data = await service.search_course(search=search)
+    )
+
+@router.get(
+    "/recent-courses",
+    status_code=200,
+    name="Recently Added Courses",
+    description="Get latest courses excluding enrolled ones",
+    operation_id="get_recent_courses",
+    dependencies=[Depends(HasPermission(role_name="STUDENT"))]
+)
+async def get_recent_courses(
+    service: Annotated[UserService, Depends()],
+    current_user: Annotated[UserModel, Depends(HasPermission(role_name="STUDENT"))],
+    limit: Annotated[int, Query()] = 5
+) -> List[StudentCourseResponse]:
+
+    return await service.get_recent_course(
+        user_id=current_user.id,
+        limit=limit
     )

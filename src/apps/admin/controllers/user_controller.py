@@ -13,7 +13,7 @@ from apps.user.schemas.response import BaseUserResponse
 from apps.admin.services import AdminUserService
 from core.auth import AdminHasPermission
 from core.utils.schema import BaseResponse
-from apps.admin.schemas.student_course_response import StudentWithCourseResponse, FacultyCourseResponse
+from apps.admin.schemas.student_course_response import StudentWithCourseResponse, FacultyCourseResponse, StudentRankResponse
 
 
 router = APIRouter(prefix="/admin/user", tags=["User Control by Admin"], dependencies=[Depends(AdminHasPermission())])
@@ -110,7 +110,7 @@ async def get_users(
     description="Get a list of students along with the courses they are enrolled in",
     operation_id="get_students_with_courses",
 )
-async def get_students_with_courses(
+async def get_course_with_condition(
     service: Annotated[AdminUserService, Depends()],
     language: Annotated[str, Query()]
 ) -> BaseResponse[List[StudentWithCourseResponse]]:
@@ -124,6 +124,27 @@ async def get_students_with_courses(
         BaseResponse[List[StudentCourseResponse]]: A list of students with their enrolled courses.
     """
     return BaseResponse(data=await service.get_student_with_courses(language))
+
+@router.get(
+    "/course-with-more-student",  
+    status_code=status.HTTP_200_OK,
+    name="get course with more than one student",
+    description="Get a list of courses in which more than one student ",
+    operation_id="get_course_with_condition",
+)
+async def get_students_with_courses(
+    service: Annotated[AdminUserService, Depends()],
+) -> BaseResponse[List[StudentWithCourseResponse]]:
+    """
+    Get a list of students along with the courses they are enrolled in.
+
+    Args:
+        service (AdminUserService): The admin user service instance.
+
+    Returns:
+        BaseResponse[List[StudentCourseResponse]]: A list of students with their enrolled courses.
+    """
+    return BaseResponse(data=await service.get_course_with_more_than_one_student())
 
 @router.get(
     "/faculty-with-courses",  
@@ -147,6 +168,20 @@ async def get_faculty_with_courses(
     """
     return BaseResponse(data=await service.get_faculty_with_courses(language))
 
+@router.get(
+    "/student-rank",
+    status_code=status.HTTP_200_OK,
+    name="Rank students by course count",
+    operation_id="rank_students",
+)
+async def rank_students(
+    page_params: Annotated[Params, Depends()],
+    service: Annotated[AdminUserService, Depends()],
+) -> BaseResponse[Page[StudentRankResponse]]:
+
+    return BaseResponse(
+        data=await service.rank_student(params=page_params)
+    )
 
 @router.get(
     "/{user_id}",
@@ -250,5 +285,4 @@ async def assign_faculty_to_course(
 ) -> BaseResponse[None]:
     await service.assign_faculty_to_course(req)
     return BaseResponse(data="Faculty assigned to course successfully")
-
 

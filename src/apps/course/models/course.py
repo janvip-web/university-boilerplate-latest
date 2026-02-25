@@ -1,10 +1,11 @@
 import uuid
 from uuid import UUID
 from typing import Self, TYPE_CHECKING,List
+from datetime import datetime
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, UniqueConstraint
-from sqlalchemy import Enum
+from sqlalchemy import Enum, func
 
 from core.db import Base
 from core.utils.mixins import UUIDPrimaryKeyMixin
@@ -18,7 +19,9 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
     course_credit: Mapped[int] = mapped_column()
     course_description: Mapped[str] = mapped_column(nullable=True)
     faculty_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
-
+    created_at: Mapped[datetime] = mapped_column(
+        default=datetime.utcnow, server_default=func.now(), nullable=True
+    )
 
     students = relationship("UserModel", secondary="association", back_populates="courses", lazy="selectin")
     faculty = relationship("UserModel", back_populates="faculty_courses")

@@ -51,6 +51,10 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
         :return: A string with the user's first and last name.
         """
         return f"<{self.first_name} {self.last_name}>"
+    
+    @property
+    def role(self) -> str | None:
+        return self.role_ref.role if self.role_ref else None
 
     @classmethod
     def create(
@@ -85,6 +89,7 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
             preferred_language=preferred_language
         )
     
+
 
 
 

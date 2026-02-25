@@ -109,6 +109,6 @@ async def update_course_by_id(
 async def delete_course_by_id(
     course_id: Annotated[UUID, Path()],
     service: Annotated[AdminCourseService, Depends()]
-) -> BaseResponse[CourseResponse]:
+) -> BaseResponse:
     course = await service.delete_course_by_id(course_id=course_id)
     return BaseResponse(data=course)

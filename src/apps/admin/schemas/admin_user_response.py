@@ -15,5 +15,5 @@ class  AdminListUsersResponse(BaseUserResponse):
 
     email: str
     phone: str
-    role: str
+    role_id: int
     preferred_language: str
