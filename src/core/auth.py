@@ -18,7 +18,7 @@ from apps.user.models.user import UserModel
 from config import settings
 from core.db import db_session
 from core.exceptions import InvalidJWTTokenException, UnauthorizedError
-from core.types import RoleType
+from constants.roles import Roles
 
 
 class JWToken(SecurityBase):
@@ -245,7 +245,6 @@ class AdminHasPermission:
         """
         Initialize the object to check admin permissions.
         """
-        self.type = RoleType.ADMIN
 
     async def __call__(
         self,
@@ -270,6 +269,6 @@ class AdminHasPermission:
         )
 
         # if not user or user.role_id != RoleType.ADMIN:
-        if not user or user.role_id != 1:
+        if not user or user.role_ref.role != Roles.ADMIN:
             raise UnauthorizedError(message=constants.UNAUTHORIZED)
         return user

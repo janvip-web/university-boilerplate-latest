@@ -26,6 +26,7 @@ from core.exceptions import BadRequestError
 from core.types import RoleType
 from core.utils.hashing import hash_password, verify_password
 from core.utils import strong_password
+from constants.roles import Roles
 
 
 
@@ -108,27 +109,33 @@ class UserService:
             raise BadRequestError(message=constants.PASSWORD_FIELD_REQUIRED)
 
         user = await self.session.scalar(
-            select(UserModel).where(
-                and_(UserModel.email == email,
-                     UserModel.role_id.in_([2, 3]))  # Only allow students and faculty to login
+            select(UserModel)
+            .options(selectinload(UserModel.role_ref))
+            .where(
+                and_(UserModel.email == email,)
+                    #  RoleModel.role.in_([Roles.STUDENT,Roles.FACULTY]))  # Only allow students and faculty to login
             )
         )
         if not user:
             raise InvalidCredentialsException
+
+        user_role = user.role_ref.role
+        if user_role not in [Roles.STUDENT, Roles.FACULTY] :
+            raise InvalidCredentialsException
+
         verify = await verify_password(
             hashed_password=user.password, plain_password=password
         )
         if not verify:
             raise InvalidCredentialsException
         
-        print(user.role_id)
-        return await create_tokens(user_id=user.id, role_id=user.role_id)
+        return await create_tokens(user)
 
     async def _get_user_with_courses(self, user_id: UUID) -> UserModel:
 
         result = await self.session.scalars(
             select(UserModel)
-            .options(
+            .options(selectinload(UserModel.role_ref),
                 selectinload(UserModel.courses)
                 .selectinload(CourseModel.translations)
             )
@@ -140,7 +147,7 @@ class UserService:
         if not user:
             raise UserNotFoundException()
 
-        if user.role_id != 2:
+        if user.role_ref.role != Roles.STUDENT:
             raise HTTPException(
                 status_code=400,
                 detail="User is not a student"

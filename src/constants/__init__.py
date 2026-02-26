@@ -32,6 +32,7 @@ from constants.messages import (
     USER_DELETED
 )
 from constants.regex import EMAIL_REGEX
+from constants.roles import Roles
 
 __all__ = [
     "EXPIRED_TOKEN",
@@ -65,5 +66,6 @@ __all__ = [
     "EMAIL_REGEX",
     "PAYLOAD_TIMEOUT",
     "ROLE_NOT_FOUND",
-    "USER_DELETED"
+    "USER_DELETED",
+    "Roles"
 ]

@@ -33,6 +33,7 @@ from core.utils.hashing import hash_password, verify_password
 from core.utils.set_cookies import delete_cookies
 from apps.admin.schemas.assign_faculty_request import AssignFacultyRequest
 from apps.admin.schemas.student_course_response import StudentRankResponse
+from constants.roles import Roles
 
 
 class AdminUserService:
@@ -89,27 +90,35 @@ class AdminUserService:
         validate_email(email=email)
 
         user = await self.session.scalar(
-            select(UserModel).where(
-                and_(UserModel.email == email, UserModel.role_id == 1)
+            select(UserModel)
+            .options(selectinload(UserModel.role_ref))
+            .where(
+                and_(UserModel.email == email, )
+                    #  RoleModel.role == Roles.ADMIN.upper())
             )
         )
+
+        if user.role != Roles.ADMIN:
+            raise InvalidCredentialsException
 
         if not user:
             raise InvalidCredentialsException
         
-        if user.is_deleted:
-            raise UnauthorizedError("Account deleted")
+        # if user.is_deleted:
+        #     raise UnauthorizedError("Account deleted")
 
-        if not user.is_activated:  
-            raise UnauthorizedError("Account deactivated")
-        
+        # if not user.is_activated:  
+        #     raise UnauthorizedError("Account deactivated")
+        print("Password plain:", repr(password))
+        print("Password DB:", repr(user.password))
+
         verify = await verify_password(
             hashed_password=user.password, plain_password=password
         )
         if not verify:
             raise InvalidCredentialsException
 
-        return await create_tokens(user_id=user.id, role_id=user.role_id)
+        return await create_tokens(user)
     
 
 
@@ -463,7 +472,9 @@ class AdminUserService:
                 algorithms=[settings.JWT_ALGORITHM],
             )
 
-            role_id = payload.get("role_id")
+            role = payload.get("role")
+            if not role:
+                raise HTTPException(status_code=401, detail="Invalid token payload")
 
         except jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Token expired")
@@ -478,17 +489,19 @@ class AdminUserService:
             }
         )
 
-        return delete_cookies(response=response, role_id=role_id)
+        return delete_cookies(response=response, role=role)
     
     
     async def assign_faculty_to_course(self, req: AssignFacultyRequest):
         faculty = await self.session.scalar(
-            select(UserModel).where(UserModel.id == req.faculty_id))
+            select(UserModel)
+            .options(selectinload(UserModel.role_ref))
+            .where(UserModel.id == req.faculty_id))
         
         if not faculty:
             raise UserNotFoundException
         
-        if faculty.role_id != 3:
+        if faculty.role_ref.role != Roles.FACULTY:
             raise BadRequestError(message="User is not a faculty")
         
         result = await self.session.execute(
@@ -511,7 +524,8 @@ class AdminUserService:
         result = await self.session.scalars(
             select(UserModel).options(selectinload(UserModel.courses)
                                       .selectinload(CourseModel.translations))
-            .where(UserModel.role_id == 2, UserModel.is_deleted == False)
+                                      .join(UserModel.role_ref) # join only for filtering
+            .where(RoleModel.role == Roles.STUDENT, UserModel.is_deleted == False)
         )
         students = result.all()
         # Manual language selection
@@ -560,7 +574,8 @@ class AdminUserService:
         result =await self.session.scalars(
             select(UserModel).options(selectinload(UserModel.faculty_courses)
                                       .selectinload(CourseModel.translations))
-            .where(UserModel.role_id == 3, UserModel.is_deleted == False)
+                                      .join(UserModel.role_ref)
+            .where(RoleModel.role == Roles.FACULTY, UserModel.is_deleted == False)
         )
         faculty_members = result.all()
         for faculty in faculty_members:
@@ -599,8 +614,9 @@ class AdminUserService:
                       .over(order_by=func.count(Association.course_id).desc())
                       .label("rank"),)
                       .join(Association, Association.user_id == UserModel.id)
+                      .join(UserModel.role_ref)
                       .where(
-                          UserModel.role_id == 2,
+                          RoleModel.role == Roles.STUDENT,
                           UserModel.is_deleted.is_(False)
                       )
                       .group_by(UserModel.id)

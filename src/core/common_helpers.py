@@ -30,6 +30,8 @@ from core.types import RoleType
 from core.utils import strong_password
 from datetime import datetime, timedelta,timezone
 import json
+from apps.user.models.user import UserModel
+from constants.roles import Roles
 
 
 async def create_password():
@@ -41,7 +43,7 @@ async def create_password():
     return secrets.token_urlsafe(15)
 
 
-async def create_tokens(user_id: UUID, role_id: int) -> dict[str, str]:
+async def create_tokens(user: UserModel) -> dict[str, str]:
     """
     Create access-token and refresh-token for a user.
 
@@ -50,19 +52,20 @@ async def create_tokens(user_id: UUID, role_id: int) -> dict[str, str]:
         user_id:
     :return: A dictionary containing access-token and refresh-token.
     """
-    if role_id == 2 or role_id == 3:
+    role = user.role
+    if role in [Roles.STUDENT, Roles.FACULTY]:
         access_token = access.encode(
-            payload={"id": str(user_id), "role_id": role_id}, expire_period=int(settings.ACCESS_TOKEN_EXP)
+            payload={"id": str(user.id), "role": role}, expire_period=int(settings.ACCESS_TOKEN_EXP)
         )
         refresh_token = refresh.encode(
-            payload={"id": str(user_id), "role_id": role_id}, expire_period=int(settings.REFRESH_TOKEN_EXP)
+            payload={"id": str(user.id), "role": role}, expire_period=int(settings.REFRESH_TOKEN_EXP)
         )
-    elif role_id == 1:
+    elif role == Roles.ADMIN:
         access_token = admin_access.encode(
-            payload={"id": str(user_id), "role_id": role_id}, expire_period=int(settings.ACCESS_TOKEN_EXP)
+            payload={"id": str(user.id), "role": role}, expire_period=int(settings.ACCESS_TOKEN_EXP)
         )
         refresh_token = admin_refresh.encode(
-            payload={"id": str(user_id), "role_id": role_id}, expire_period=int(settings.REFRESH_TOKEN_EXP)
+            payload={"id": str(user.id), "role": role}, expire_period=int(settings.REFRESH_TOKEN_EXP)
         )
     else:
         raise InvalidRoleException

@@ -20,36 +20,6 @@ from apps.course.schemas.response import StudentCourseResponse, CourseResponse
 router = APIRouter(prefix="/api/user", tags=["User"])
 
 
-# @router.post(
-#     "/sign-in",
-#     status_code=status.HTTP_200_OK,
-#     name="sign-in",
-#     description="sign-in",
-#     operation_id="sign_in",
-# )
-# async def sign_in(
-#     request: Request,
-#     body: Annotated[EncryptedRequest, Body()],
-#     service: Annotated[UserService, Depends()],
-# ) -> JSONResponse:
-#     """
-#     Log in a user using email and password.
-
-#     Args:
-#         body (UserLoginRequest): The request object containing login information.
-#         service (AuthService): The authentication service.
-
-#     Returns:
-#         Response: The response with authentication cookies set.
-#     """
-
-#     res = await service.login_user(request=request, **body.model_dump())
-#     if "access_token" in res and res.get("access_token"):
-#         data = {"status": constants.SUCCESS, "code": status.HTTP_200_OK, "data": res}
-#         response = JSONResponse(content=data)
-#         # print(res.get("role_id"))
-#         return set_auth_cookies(response, res, role_id=res.get("role_id"))
-
 @router.post(
     "/sign-in",
     status_code=status.HTTP_200_OK,
@@ -72,7 +42,7 @@ async def sign_in(
             algorithms=settings.JWT_ALGORITHM,
         )
 
-        role_id = payload.get("role_id")   # 👈 Extract role_id
+        role = payload.get("role")   # 👈 Extract role_id
 
         data = {
             "status": constants.SUCCESS,
@@ -82,34 +52,7 @@ async def sign_in(
 
         response = JSONResponse(content=data)
 
-        return set_auth_cookies(response, res, role_id=role_id)
-
-# @router.post(
-#     "",
-#     status_code=status.HTTP_201_CREATED,
-#     name="Create user",
-#     description="Create user",
-#     operation_id="create_user",
-#     deprecated=True
-# )
-# async def create_user(
-#     request: Request,
-#     body: Annotated[CreateUserRequest, Body()],
-#     service: Annotated[UserService, Depends()],
-# ) -> BaseResponse[BaseUserResponse]:
-#     """
-#     Create a new user.
-
-#     Args:
-#         body (CreateUserRequest): The request object containing user information.
-#         service (AuthService): The authentication service.
-
-#     Returns:
-#         BaseResponse[BaseUserResponse]: The response containing the created user information.
-#     """
-#     return BaseResponse(
-#         data=await service.create_user(request=request, **body.model_dump())
-#     )
+        return set_auth_cookies(response, res, role=role)
 
 
 @router.get(
@@ -215,11 +158,11 @@ async def get_self_handler(
     name="Get my courses",          
     description="Get my courses",
     operation_id="get_my_courses",
-    dependencies=[Depends(HasPermission(role_name="STUDENT"))]
+    # dependencies=[Depends(HasPermission(role_name="STUDENT"))]
 )
 async def get_my_courses(
     service: Annotated[UserService , Depends()],
-    current_user: Annotated[UserModel, Depends(HasPermission(role_name="STUDENT"))]
+    current_user: Annotated[UserModel, Depends(HasPermission(role_name=["STUDENT","FACULTY"]))]
 )-> List[StudentCourseResponse]:
     return await service.get_my_courses(current_user.id)
 
@@ -285,11 +228,11 @@ async def search_course(
     name="Recently Added Courses",
     description="Get latest courses excluding enrolled ones",
     operation_id="get_recent_courses",
-    dependencies=[Depends(HasPermission(role_name="STUDENT"))]
+    # dependencies=[Depends(HasPermission(role_name="STUDENT"))]
 )
 async def get_recent_courses(
     service: Annotated[UserService, Depends()],
-    current_user: Annotated[UserModel, Depends(HasPermission(role_name="STUDENT"))],
+    current_user: Annotated[UserModel, Depends(HasPermission(role_name=["STUDENT", "FACULTY"]))],
     limit: Annotated[int, Query()] = 5
 ) -> List[StudentCourseResponse]:
 

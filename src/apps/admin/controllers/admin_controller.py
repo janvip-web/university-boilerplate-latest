@@ -12,7 +12,7 @@ from apps.user.models.user import UserModel
 from apps.user.schemas.response import BaseUserResponse
 from core.auth import AdminHasPermission
 from core.exceptions import UnauthorizedError
-from core.types import RoleType
+from constants.roles import Roles
 from core.utils.schema import BaseResponse
 from core.utils.set_cookies import set_auth_cookies
 
@@ -53,7 +53,7 @@ async def sign_in(
     if "access_token" in res and res.get("access_token"):
         data = {"status": constants.SUCCESS, "code": status.HTTP_200_OK, "data": res}
         response = JSONResponse(content=data)
-        response = set_auth_cookies(response, res, 1)
+        response = set_auth_cookies(response, res, Roles.ADMIN)
         return response
     else:
         # Handle case where login fails but doesn't raise an exception

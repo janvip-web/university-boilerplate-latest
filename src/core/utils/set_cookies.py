@@ -1,11 +1,11 @@
 from fastapi.responses import JSONResponse
 
 from config import settings
-from core.types import RoleType
+from constants.roles import Roles
 
 
 def set_auth_cookies(
-    response: JSONResponse, tokens: dict[str, str], role_id: int
+    response: JSONResponse, tokens: dict[str, str], role: str
 ) -> JSONResponse:
     """
     Set authentication cookies in an HTTP response.
@@ -26,7 +26,7 @@ def set_auth_cookies(
         "httponly": True,
     }
 
-    if role_id == 2 or role_id == 3 :
+    if role in [Roles.STUDENT, Roles.FACULTY] :
         response.set_cookie(
             "accessToken",
             tokens["access_token"],
@@ -39,7 +39,7 @@ def set_auth_cookies(
             expires=int(settings.REFRESH_TOKEN_EXP),
             **cookies_params,
         )
-    if role_id == 1:
+    if role == Roles.ADMIN:
         response.set_cookie(
             "adminAccessToken",
             tokens["access_token"],
@@ -55,7 +55,7 @@ def set_auth_cookies(
     return response
 
 
-def delete_cookies(response: JSONResponse, role_id: int) -> JSONResponse:
+def delete_cookies(response: JSONResponse, role: str) -> JSONResponse:
     """
     Delete authentication cookies from an HTTP response.
     This function takes an HTTP response object and removes the "accessToken" and "refreshToken" cookies
@@ -73,10 +73,10 @@ def delete_cookies(response: JSONResponse, role_id: int) -> JSONResponse:
         "httponly": True,
     }
 
-    if role_id == 2 or role_id == 3:
+    if role in [Roles.STUDENT, Roles.FACULTY]:
         response.delete_cookie("accessToken", **cookie_params)
         response.delete_cookie("refreshToken", **cookie_params)
-    elif role_id == 1:
+    elif role == Roles.ADMIN:
         response.delete_cookie("adminAccessToken", **cookie_params)
         response.delete_cookie("adminRefreshToken", **cookie_params)
 

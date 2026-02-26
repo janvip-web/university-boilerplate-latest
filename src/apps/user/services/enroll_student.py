@@ -14,6 +14,7 @@ from apps.user.exceptions import (
     CourseNotFoundException
 )
 from core.db import db_session
+from constants.roles import Roles
 
 
 
@@ -32,7 +33,8 @@ class EnrollService:
             raise CourseNotFoundException
         
         result = await self.session.execute(
-            select(UserModel).where(UserModel.id.in_(req.student_ids))
+            select(UserModel)
+            .options(selectinload(UserModel.role_ref)).where(UserModel.id.in_(req.student_ids))
         )
         students = result.scalars().all()
 
@@ -40,7 +42,7 @@ class EnrollService:
             raise UserNotFoundException
         
         for student in students:
-            if student.role_id != 2:
+            if student.role_ref.role != Roles.STUDENT:
                 raise HTTPException(
                     status_code=400,
                     detail=f"User {student.id} is not a student"
@@ -53,7 +55,7 @@ class EnrollService:
 
     async def   self_enroll_to_course(self, req: SelfEnrollRequest, current_user:UserModel)->JSONResponse:
 
-        if current_user.role_id != 2:
+        if current_user.role_ref.role != Roles.STUDENT:
             raise HTTPException(
                 status_code=400,
                 detail=f"User {current_user.id} is not a student"
