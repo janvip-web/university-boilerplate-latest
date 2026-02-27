@@ -2,17 +2,19 @@ import json
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Request, Query
+from fastapi import Depends, Request, Query
 from fastapi.responses import JSONResponse
 from fastapi_pagination import Page, Params, paginate, create_page
 from fastapi_pagination.ext.sqlalchemy import paginate
 import jwt
-from sqlalchemy import and_, select, or_ , update, func
+from sqlalchemy import and_, select, or_ , update, func, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload, Load, joinedload
 
-from apps.course.models.course import CourseModel, Association
+from apps.course.models.course import CourseModel, Association, CourseTranslationModel
 import constants
+from constants.messages import INVALID_TOKEN_OR_PAYLOAD
+from core.enum import LanguageEnum
 from apps.user.exceptions import (
     DuplicateEmailException,
     InvalidCredentialsException,
@@ -20,13 +22,14 @@ from apps.user.exceptions import (
     UserNotFoundException,
     WeakPasswordException,
     CourseNotFoundException,
-    UserDeletedException
+    UserNotLogginException,
+    InvalidTokenException
 )
 from apps.user.models.user import UserModel, RoleModel
 from config import settings
 from core.common_helpers import create_tokens, decrypt, validate_email, validate_input_fields
 from core.db import db_session
-from core.exceptions import BadRequestError, UnauthorizedError
+from core.exceptions import BadRequestError, InvalidJWTTokenException, UnauthorizedError
 from core.types import RoleType
 from core.utils import strong_password
 from core.utils.hashing import hash_password, verify_password
@@ -305,6 +308,86 @@ class AdminUserService:
         self.session.add(user)
         return user
     
+    # async def bulk_create_users(self, file) -> dict:
+    #     """Parse a CSV upload and create multiple users.
+
+    #     Expected headers: first_name,last_name,email,phone,password,role_name,
+    #     preferred_language (optional).
+
+    #     Rows failing validation or which conflict with existing users are
+    #     skipped; each failure is reported in the returned ``errors`` list.
+    #     """
+    #     import csv
+    #     from io import StringIO
+
+    #     content = await file.read()
+    #     try:
+    #         text = content.decode("utf-8")
+    #     except Exception:
+    #         raise BadRequestError(message="Unable to decode CSV file; ensure it is UTF-8")
+
+    #     reader = csv.DictReader(StringIO(text))
+    #     created = []
+    #     errors = []
+    #     row_num = 1
+    #     async with self.session.begin():
+    #         for row in reader:
+    #             row_num += 1
+    #             first_name = row.get("first_name")
+    #             last_name = row.get("last_name")
+    #             email = row.get("email")
+    #             phone = row.get("phone")
+    #             password = row.get("password")
+    #             role_name = row.get("role_name")
+    #             pref_lang = row.get("preferred_language")
+
+    #             try:
+    #                 validate_input_fields(
+    #                     first_name=first_name,
+    #                     email=email,
+    #                     phone=phone,
+    #                     password=password,
+    #                 )
+    #             except Exception as e:
+    #                 errors.append({"row": row_num, "error": str(e)})
+    #                 continue
+
+    #             # check duplicates
+    #             existing = await self.session.scalar(
+    #                 select(UserModel).where(
+    #                     or_(UserModel.email == email, UserModel.phone == phone)
+    #                 )
+    #             )
+    #             if existing:
+    #                 errors.append({"row": row_num, "error": "email or phone already exists"})
+    #                 continue
+
+    #             role = await self.session.scalar(
+    #                 select(RoleModel).where(RoleModel.role == role_name.upper())
+    #             )
+    #             if not role:
+    #                 errors.append({"row": row_num, "error": "role not found"})
+    #                 continue
+
+    #             try:
+    #                 hashed = await hash_password(password)
+    #             except Exception as e:
+    #                 errors.append({"row": row_num, "error": "password hashing failed"})
+    #                 continue
+
+    #             user = UserModel.create(
+    #                 first_name=first_name,
+    #                 last_name=last_name,
+    #                 phone=phone,
+    #                 password=hashed,
+    #                 email=email,
+    #                 role_id=role.role_id,
+    #                 preferred_language=pref_lang or None,
+    #             )
+    #             self.session.add(user)
+    #             created.append(user)
+    #     return {"created": len(created), "errors": errors}
+
     async def update_user(
         self, user_id: UUID, request: Request, encrypted_data: str, encrypted_key: str, iv: str
     ) -> UserModel:
@@ -460,10 +543,7 @@ class AdminUserService:
     )
         
         if not access_token:
-            raise HTTPException(
-            status_code=401,
-            detail="User not logged in"
-        )
+            raise UserNotLogginException
 
         try:
             payload = jwt.decode(
@@ -474,13 +554,14 @@ class AdminUserService:
 
             role = payload.get("role")
             if not role:
-                raise HTTPException(status_code=401, detail="Invalid token payload")
+                raise INVALID_TOKEN_OR_PAYLOAD
 
         except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="Token expired")
+            raise InvalidJWTTokenException(constants.EXPIRED_TOKEN)
 
         except jwt.InvalidTokenError:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise INVALID_TOKEN_OR_PAYLOAD
+            
 
         response = JSONResponse(
             content={
@@ -519,41 +600,36 @@ class AdminUserService:
         return {"message": "Faculty assigned to course successfully"}
     
 
-    async def get_student_with_courses(self, language:str):
+
+    async def get_student_with_courses(self, language: str):
 
         result = await self.session.scalars(
-            select(UserModel).options(selectinload(UserModel.courses)
-                                      .selectinload(CourseModel.translations))
-                                      .join(UserModel.role_ref) # join only for filtering
+            select(UserModel)
+            .options(
+                selectinload(UserModel.courses).selectinload(CourseModel.translations)
+            )
+            .join(UserModel.role_ref)  # join only for filtering
             .where(RoleModel.role == Roles.STUDENT, UserModel.is_deleted == False)
         )
         students = result.all()
-        # Manual language selection
+
+        # add a non‑persistent attribute so we don't mutate the mapped column
         for student in students:
             for course in student.courses:
-            
-            # find translation for requested language
                 translation = next(
-                    (
-                        t for t in course.translations
-                        if t.language_code == language
-                    ),
-                    None
+                    (t for t in course.translations if t.language_code == language),
+                    None,
                 )
-
-                # fallback to English
                 if not translation:
                     translation = next(
-                        (
-                            t for t in course.translations
-                            if t.language_code == "en"
-                        ),
-                        None
+                        (t for t in course.translations if t.language_code == LanguageEnum.EN),
+                        None,
                     )
 
-                # override course_name dynamically
-                if translation:
-                    course.course_name = translation.course_name
+                # instead of writing to course.course_name (which would
+                # mark the instance dirty and eventually update the DB),
+                # stash the translated title on a separate attribute.
+                course.translated_name = translation.course_name if translation else course.course_name
 
         return students
     
@@ -570,39 +646,30 @@ class AdminUserService:
         return students
     
 
-    async def get_faculty_with_courses(self,language:str):
-        result =await self.session.scalars(
-            select(UserModel).options(selectinload(UserModel.faculty_courses)
-                                      .selectinload(CourseModel.translations))
-                                      .join(UserModel.role_ref)
+    async def get_faculty_with_courses(self, language: str):
+        result = await self.session.scalars(
+            select(UserModel)
+            .options(selectinload(UserModel.faculty_courses).selectinload(CourseModel.translations))
+            .join(UserModel.role_ref)
             .where(RoleModel.role == Roles.FACULTY, UserModel.is_deleted == False)
         )
         faculty_members = result.all()
+
         for faculty in faculty_members:
             for course in faculty.faculty_courses:
-
-                # 1️⃣ Try requested language
+                # try requested language first
                 translation = next(
-                    (
-                        t for t in course.translations
-                        if t.language_code == language
-                    ),
-                    None
+                    (t for t in course.translations if t.language_code == language),
+                    None,
                 )
-
-                # 2️⃣ Fallback to English
+                # fallback english
                 if not translation:
                     translation = next(
-                        (
-                            t for t in course.translations
-                            if t.language_code == "en"
-                        ),
-                        None
+                        (t for t in course.translations if t.language_code == LanguageEnum.EN),
+                        None,
                     )
-
-                # 3️⃣ Override course name
-                if translation:
-                    course.course_name = translation.course_name
+                # stash translated value, avoid mutating mapped attr
+                course.translated_name = translation.course_name if translation else course.course_name
         return faculty_members
     
     async def rank_student(self, params:Params) :
@@ -627,3 +694,4 @@ class AdminUserService:
         page.items = [dict(item._mapping) for item in page.items]
 
         return page
+

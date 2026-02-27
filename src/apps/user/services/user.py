@@ -1,20 +1,23 @@
+from io import BytesIO
 import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
-from sqlalchemy import and_, or_, select, desc, func, join
+from fastapi import Depends, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
+from openpyxl import Workbook
+from sqlalchemy import and_, or_, select, desc, func, join, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
 import constants
 from apps.user.exceptions import (
-    DuplicateEmailException,
     InvalidCredentialsException,
     UserNotFoundException,
     InvalidRequestException, 
-    WeakPasswordException
+    WeakPasswordException,
+    UserNotStudent,
+    CourseNotFoundException
 )
 from apps.user.models.user import UserModel, RoleModel
 from apps.course.models.course import CourseModel, CourseTranslationModel, Association
@@ -148,11 +151,8 @@ class UserService:
             raise UserNotFoundException()
 
         if user.role_ref.role != Roles.STUDENT:
-            raise HTTPException(
-                status_code=400,
-                detail="User is not a student"
-            )
-
+            raise UserNotStudent
+        
         return user
 
     async def get_my_courses(self, user_id: UUID):
@@ -175,7 +175,7 @@ class UserService:
             response_courses.append(
                 StudentCourseResponse(
                     id=course.id,
-                    course_name=translation.course_name if translation else course.course_name,
+                    translated_name=translation.course_name if translation else course.course_name,
                     course_credit=course.course_credit,
                 )
             )
@@ -302,12 +302,65 @@ class UserService:
         courses = result.scalars().all()
 
         if not courses:
-            raise HTTPException(
-            status_code=404,
-            detail="Course not present"
-        )
+            raise CourseNotFoundException
 
         return courses
 
 
+
+        stmt = (
+            select(CourseModel)
+            .options(selectinload(CourseModel.students))
+            .where(
+                UserModel.is_deleted.is_(False),
+            )
+            .options(
+                selectinload(CourseModel.translations),
+                selectinload(CourseModel.faculty)
+            )
+        )
+
+        result = await self.session.scalars(stmt)
+        courses = result.all()
+
+        return courses
     
+    async def export_my_courses(self, user_id: UUID)-> StreamingResponse:
+        user = await self._get_user_with_courses(user_id = user_id)
+
+        preferred_language = user.preferred_language
+        print("preferred_lang", preferred_language)
+        courses = user.courses
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title="My courses"
+        ws.append(["id","course_name","course_credit"])
+        for c in courses:
+            print("Course:", c.id)
+            print("Available translations:",[t.language_code for t in c.translations])
+                    # 1️⃣ Find translation in preferred language
+            translation = next(
+                (t for t in c.translations if t.language_code == preferred_language),
+                None
+            ) or next(
+                # 2️⃣ Fallback to English
+                (t for t in c.translations if t.language_code == "en"),
+                None
+            )
+
+            # 3️⃣ Final fallback to base course name
+            course_name = (
+                translation.course_name
+                if translation
+                else c.course_name
+            )
+
+            ws.append([str(c.id),
+                       course_name,
+                       c.course_credit])
+            
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()

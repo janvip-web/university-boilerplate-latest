@@ -1,8 +1,9 @@
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from uuid import UUID
+import io
 
-from fastapi import APIRouter, Body, Depends, Path, Request, status, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, Depends, Path, Request, dependencies, status, Query
+from fastapi.responses import JSONResponse, StreamingResponse
 
 import constants
 from apps.user.models.user import UserModel
@@ -166,6 +167,26 @@ async def get_my_courses(
 )-> List[StudentCourseResponse]:
     return await service.get_my_courses(current_user.id)
 
+@router.get(
+    "/export",
+    status_code=status.HTTP_200_OK,
+    name = "Export my courses to Excel",
+    description="Download course data as an excel file",
+    operation_id="export_my_courses"
+)
+async def export_my_courses(
+    service: Annotated[UserService, Depends()],
+    current_user: Annotated[UserModel, Depends(HasPermission(role_name=["STUDENT","FACULTY"]))]
+)-> StreamingResponse:
+    data = await service.export_my_courses(current_user.id)
+    fname = "my_courses.xlsx"
+
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
 @router.patch(
     "/change-password",
     name="change user password",
@@ -240,3 +261,4 @@ async def get_recent_courses(
         user_id=current_user.id,
         limit=limit
     )
+

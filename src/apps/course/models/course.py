@@ -44,6 +44,22 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
             course_description=course_description,
         )
     
+    def get_translated_name(self, language: str) -> str:
+        try:
+            requested_lang = LanguageEnum(language.lower())
+        except ValueError:
+            requested_lang = LanguageEnum.EN
+
+        translation = next(
+            (t for t in self.translations if t.language_code == requested_lang),
+            None
+        ) or next(
+            (t for t in self.translations if t.language_code == LanguageEnum.EN),
+            None
+        )
+
+        return translation.course_name if translation else self.course_name
+
 
 class CourseTranslationModel(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "course_translations"

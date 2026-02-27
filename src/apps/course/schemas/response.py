@@ -12,7 +12,7 @@ class CourseResponse(BaseModel):
 
 class StudentCourseResponse(BaseModel):
     id: UUID
-    course_name: str
+    translated_name: str 
     course_credit: int
 
 

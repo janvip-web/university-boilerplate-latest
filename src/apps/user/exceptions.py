@@ -17,6 +17,13 @@ class InvalidCredentialsException(UnauthorizedError):
 
     message = constants.INVALID_CREDS
 
+class UserNotLogginException(UnauthorizedError):
+    message = constants.USER_NOT_LOGGIN
+
+class InvalidTokenException(UnauthorizedError):
+    message = constants.INVALID_TOKEN_OR_PAYLOAD
+
+
 
 class UserNotFoundException(NotFoundError):
     """
@@ -51,6 +58,9 @@ class InvalidEncryptedData(BadRequestError):
 
     message = constants.INVALID_ENCRYPTED_DATA
 
+class UserNotStudent(BadRequestError):
+    message = constants.USER_IS_NOT_STUDENT    
+
 class WeakPasswordException(BadRequestError):
     """
     Custom exception for User already assigned error.
@@ -78,3 +88,6 @@ class InvalidRequestException(BadRequestError):
     """
 
     message = constants.INVALID_REQUEST
+
+class InvalidFileType(BadRequestError):
+    message = constants.INVALID_FILETYPE

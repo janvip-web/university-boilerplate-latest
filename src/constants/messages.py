@@ -57,3 +57,11 @@ PASSWORD_FIELD_REQUIRED = "Password field is required."
 ROLE_NOT_FOUND = "Role not found"
 
 USER_DELETED = 'User deleted Successfully'
+
+USER_NOT_LOGGIN = "User not logged in"
+
+INVALID_TOKEN_OR_PAYLOAD = "Invalid token or token payload"
+
+USER_IS_NOT_STUDENT = "Logged user is not student"
+
+INVALID_FILETYPE = "Invalide file type."

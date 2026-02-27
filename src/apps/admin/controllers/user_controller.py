@@ -1,13 +1,14 @@
 from typing import Annotated, Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Path, Request, status, Query
+from fastapi import APIRouter, Body, Depends, Path, Request, status, Query, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi_pagination import Page, Params
 
 
 from apps.admin.schemas.admin_user_response import AdminListUsersResponse
 from apps.admin.schemas.assign_faculty_request import AssignFacultyRequest
+from apps.course.schemas.filter import Language
 from apps.user.schemas.request import EncryptedRequest, CreateUserRequest
 from apps.user.schemas.response import BaseUserResponse
 from apps.admin.services import AdminUserService
@@ -73,6 +74,7 @@ async def update_user(
         data=await service.update_user(user_id=user_id, request=request, **body.model_dump())
     )
 
+
 @router.get(
     "/users",
     status_code=status.HTTP_200_OK,
@@ -110,9 +112,9 @@ async def get_users(
     description="Get a list of students along with the courses they are enrolled in",
     operation_id="get_students_with_courses",
 )
-async def get_course_with_condition(
+async def get_course_with_courses(
     service: Annotated[AdminUserService, Depends()],
-    language: Annotated[str, Query()]
+    language: Annotated[Language, Query()]
 ) -> BaseResponse[List[StudentWithCourseResponse]]:
     """
     Get a list of students along with the courses they are enrolled in.
@@ -132,7 +134,7 @@ async def get_course_with_condition(
     description="Get a list of courses in which more than one student ",
     operation_id="get_course_with_condition",
 )
-async def get_students_with_courses(
+async def get_students_with_condition(
     service: Annotated[AdminUserService, Depends()],
 ) -> BaseResponse[List[StudentWithCourseResponse]]:
     """
@@ -155,7 +157,7 @@ async def get_students_with_courses(
 )
 async def get_faculty_with_courses(
     service: Annotated[AdminUserService, Depends()],
-    language: Annotated[str, Query()]
+    language: Annotated[Language, Query()]
 ) -> BaseResponse[List[FacultyCourseResponse]]:
     """
     Get a list of faculty along with the courses they are teaching.

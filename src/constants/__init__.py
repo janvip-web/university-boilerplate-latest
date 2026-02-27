@@ -29,7 +29,11 @@ from constants.messages import (
     WEBHOOK_FAILED,
     WEBHOOK_SUCCESSFUL,
     ROLE_NOT_FOUND,
-    USER_DELETED
+    USER_DELETED,
+    USER_NOT_LOGGIN,
+    INVALID_TOKEN_OR_PAYLOAD,
+    USER_IS_NOT_STUDENT,
+    INVALID_FILETYPE
 )
 from constants.regex import EMAIL_REGEX
 from constants.roles import Roles
@@ -67,5 +71,9 @@ __all__ = [
     "PAYLOAD_TIMEOUT",
     "ROLE_NOT_FOUND",
     "USER_DELETED",
+    "USER_NOT_LOGGIN",
+    "INVALID_TOKEN_OR_PAYLOAD",
+    "USER_IS_NOT_STUDENT",
+    "INVALID_FILETYPE",
     "Roles"
 ]

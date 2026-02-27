@@ -60,37 +60,6 @@ async def sign_in(
         raise UnauthorizedError(constants.UNAUTHORIZED)
 
 
-# @router.get(
-#     "/users",
-#     status_code=status.HTTP_200_OK,
-#     dependencies=[Depends(AdminHasPermission())],
-#     name="Admin get all users",
-#     description="Admin get all users",
-#     operation_id="admin_get_users",
-# )
-# async def get_users(
-#     page_params: Annotated[Params, Depends()],
-#     service: Annotated[AdminUserService, Depends()],
-# ) -> BaseResponse[Page[AdminListUsersResponse]]:
-#     """
-#     Retrieve a paginated list of all users for admin management.
-
-#     This endpoint allows administrators to view all registered users with
-#     pagination support. Only admin users can access this endpoint.
-
-#     Args:
-#         page_params: Pagination parameters (page size, page number)
-#         service: AdminUserService instance for business logic
-
-#     Returns:
-#         BaseResponse[Page[AdminListUsersResponse]]: Paginated list of users
-
-#     Raises:
-#         AdminHasPermission: If user doesn't have admin permissions
-#     """
-#     return BaseResponse(data=await service.get_users(params=page_params))
-
-
 @router.get(
     "/self",
     status_code=status.HTTP_200_OK,

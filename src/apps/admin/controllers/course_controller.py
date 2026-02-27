@@ -1,9 +1,10 @@
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Path, Request, status, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, Depends, Path, Request, status, Query, UploadFile, File
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi_pagination import Page, Params
+import io
 
 from apps.admin.schemas.admin_user_response import AdminListUsersResponse
 from apps.course.schemas.request import CourseRequest, CourseTranslationRequest
@@ -11,6 +12,7 @@ from apps.course.schemas.response import CourseResponse, CourseTranslationRespon
 from apps.admin.services import AdminCourseService
 from core.auth import AdminHasPermission
 from core.utils.schema import BaseResponse
+from apps.course.schemas.filter import CourseSortField, SortOrder
 
 
 router = APIRouter(prefix="/admin/course", tags=["Course Control by Admin"], dependencies=[Depends(AdminHasPermission())])
@@ -57,6 +59,39 @@ async def tanslator(
     )
 
 
+@router.get(
+    "/export",
+    status_code=status.HTTP_200_OK,
+    name="Export courses to Excel",
+    description="Download course data as an Excel file",
+    operation_id="export_courses",
+)
+async def export_courses(
+    service: Annotated[AdminCourseService, Depends()],
+    course_name: Annotated[Optional[str], Query()] = None,
+    course_credit: Annotated[Optional[int], Query()] = None,
+    search: Annotated[Optional[str], Query()] = None,
+    sort_by: Annotated[CourseSortField, Query()] = CourseSortField.created_at,
+    order: Annotated[SortOrder, Query()] = SortOrder.desc,
+):
+    """Return a spreadsheet containing every course (filtered by name).
+
+    This endpoint streams an ``.xlsx`` file; if the optional ``openpyxl``
+    package isn't installed the result will be a CSV with the same filename,
+    which Excel can still open.
+    """
+    data = await service.export_courses_excel(course_name=course_name,
+                                              course_credit=course_credit,
+                                              search=search,
+                                              sort_by=sort_by,
+                                              order=order)
+    # choose a filename depending on bytes format
+    fname = "courses.xlsx"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
 
 @router.get(
     "/courses",
@@ -67,9 +102,43 @@ async def tanslator(
 )
 async def get_all_courses_to_admin(
     page_params: Annotated[Params, Depends()],
-    service: Annotated[AdminCourseService, Depends()]
+    service: Annotated[AdminCourseService, Depends()],
+    course_name: Annotated[Optional[str], Query()] = None,
+    course_credit: Annotated[Optional[int], Query()] = None,
+    search: Annotated[Optional[str], Query()] = None,
+    sort_by: Annotated[CourseSortField, Query()] = CourseSortField.created_at,
+    order: Annotated[SortOrder, Query()] = SortOrder.desc,
 ) -> BaseResponse[Page[CourseResponse]]:
-    return BaseResponse(data = await service.get_all_courses(param=page_params))
+    return BaseResponse(
+        data = await service.get_all_courses(param=page_params, 
+                                             course_name=course_name, 
+                                             course_credit=course_credit,
+                                             search=search,
+                                             sort_by=sort_by, 
+                                             order=order))
+
+@router.get(
+    "/courses/search-combined",
+    status_code=status.HTTP_200_OK,
+    name="search courses by name and credit",
+)
+async def search_courses_combined(
+    page_params: Annotated[Params, Depends()],
+    service: Annotated[AdminCourseService, Depends()],
+    course_name: Annotated[Optional[str], Query()] = None,
+    course_credit: Annotated[Optional[int], Query()] = None,
+    sort_by: Annotated[CourseSortField, Query()] = CourseSortField.created_at,
+    order: Annotated[SortOrder, Query()] = SortOrder.desc,
+)->BaseResponse[Page[CourseResponse]]:
+    return BaseResponse(
+        data=await service.search_courses_by_name_and_credit(
+            param=page_params,
+            course_name=course_name,
+            course_credit=course_credit,
+            sort_by=sort_by,
+            order=order,
+        )
+    )
 
 @router.get(
     "/{course_id}",
@@ -112,3 +181,4 @@ async def delete_course_by_id(
 ) -> BaseResponse:
     course = await service.delete_course_by_id(course_id=course_id)
     return BaseResponse(data=course)
+
