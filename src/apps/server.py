@@ -5,12 +5,6 @@ from fastapi_limiter.depends import RateLimiter
 
 import constants
 from apps.admin.controllers import admin_router, admin_user_router, admin_course_router
-# from apps.student.controllers import student_router
-# from apps.faculty.controllers import faculty_router
-# from apps.course.controllers import course_router
-# from apps.enroll.controllers import enroll_router
-# from apps.faculty.controllers import faculty_course_router
-
 from apps.handlers import start_exception_handlers
 from apps.master.controllers import master_router
 from apps.user.controllers import user_router, enroll_student_router
@@ -45,11 +39,6 @@ def init_routers(_app: FastAPI) -> None:
     base_router.include_router(admin_user_router)
     base_router.include_router(admin_course_router)
     base_router.include_router(enroll_student_router)
-    # base_router.include_router(student_router)
-    # base_router.include_router(faculty_router)
-    # base_router.include_router(course_router)
-    # base_router.include_router(enroll_router)
-    # base_router.include_router(faculty_course_router)
     _app.include_router(base_router, responses={422: {"model": BaseValidationResponse}})
 
 

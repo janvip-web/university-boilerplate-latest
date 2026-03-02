@@ -164,7 +164,7 @@ admin_refresh = JWToken("admin_refresh")
 
 class HasPermission:
     """
-    A Dependency Injection class that checks the user's permissions.
+    Dependency class used to enforce role-based access control.
 
     This class checks the user's permissions based on the provided token payload.
 
@@ -175,7 +175,8 @@ class HasPermission:
         Initialize the HasPermission object with the specified permission type.
 
         Args:
-            type_ (RoleType): The type of permission to check.
+            role_name: List of role strings (e.g. ``["STUDENT", "FACULTY"]``)
+                that are permitted to access the protected endpoint.
         """
         self.role_name = role_name
 
@@ -185,29 +186,30 @@ class HasPermission:
         payload: Annotated[dict[str, Any], Depends(access)],
     ) -> dict[str, Any] | None:
         """
-        Check the user type and return the user object if authorized.
+        Verify that the token payload corresponds to a user with permitted roles.
 
-        :param session: The database session.
-        :param payload: The token payload containing user information.
-        :raises UnauthorizedError: If the user is not authorized.
-        :return: The user object if authorized, None otherwise.
+        This dependency is intended for endpoints that restrict access by role
+        (e.g. students or faculty). It loads the user from the database and
+        ensures ``user.role_ref.role`` is one of the configured ``role_name``
+        values.
+
+        Parameters:
+            session: AsyncSession provided by the db session dependency.
+            payload: The decoded JWT payload supplied by :class:`access`.
+
+        Raises:
+            UnauthorizedError: When the payload is missing, user not found, or
+                role is not allowed.
+
+        Returns:
+            The matching :class:`UserModel` instance.
         """
         # print(payload)
         if not payload:
-            # if self.role_name == RoleType.OPTIONAL:
-            #     return None
-            # else:
                 raise UnauthorizedError(message=constants.UNAUTHORIZED)
         
         print(payload)
         print("ID FROM TOKEN:", payload.get("id"))
-        # user = await session.scalar(
-        #     select(UserModel).where(UserModel.id == payload.get("id"))
-        # )
-
-        # user = await session.scalar(
-        #     select(StudentModel).where(StudentModel.id == payload.get("id"))
-        # )
 
         user = await session.scalar(
             select(UserModel)
@@ -217,19 +219,7 @@ class HasPermission:
 
         if not user :
             raise UnauthorizedError(message=constants.UNAUTHORIZED)
-        
-        # allowed_roles = {
-        #     RoleType.USER: [RoleType.USER],
-        #     RoleType.STAFF: [RoleType.STAFF],
-        #     RoleType.ADMIN: [RoleType.ADMIN],
-        #     RoleType.ANY: [RoleType.USER, RoleType.ADMIN, RoleType.STUDENT],
-        #     RoleType.OPTIONAL: [RoleType.USER, RoleType.STUDENT],
-        #     RoleType.STUDENT: [RoleType.STUDENT],
-        #     RoleType.FACULTY: [RoleType.FACULTY]
-        # }
 
-        # if user.role_id not in allowed_roles[self.type]:
-        #     raise UnauthorizedError(message=constants.UNAUTHORIZED)
         if user.role_ref.role not in self.role_name:
             raise UnauthorizedError(message=constants.UNAUTHORIZED)
 
@@ -268,7 +258,6 @@ class AdminHasPermission:
             .where(UserModel.id == payload.get("id"))
         )
 
-        # if not user or user.role_id != RoleType.ADMIN:
         if not user or user.role_ref.role != Roles.ADMIN:
             raise UnauthorizedError(message=constants.UNAUTHORIZED)
         return user

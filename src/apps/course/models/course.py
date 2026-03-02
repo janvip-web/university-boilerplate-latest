@@ -13,6 +13,12 @@ from core.enum import LanguageEnum
 
 
 class CourseModel(Base, UUIDPrimaryKeyMixin):
+    """
+    SQLAlchemy model representing a course.
+
+    Contains metadata such as name, credit, description, associated faculty
+    and relationships to enrolled students and translations.
+    """
     __tablename__="courses"
 
     course_name: Mapped[str] = mapped_column(index=True)
@@ -28,6 +34,11 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
     translations: Mapped[List["CourseTranslationModel"]] = relationship("CourseTranslationModel", back_populates="course", cascade="all, delete-orphan")
 
     def __str__(self):
+        """
+        Return a human-readable representation of the course.
+
+        :return: String containing the course name.
+        """
         return f"<Course {self.course_name}>"
 
     @classmethod
@@ -37,6 +48,17 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
         course_credit: int,
         course_description: str | None = None,
     ) -> Self:
+        """
+        Factory helper to instantiate a new CourseModel with a generated UUID.
+
+        Args:
+            course_name: Name of the course.
+            course_credit: Credit value for the course.
+            course_description: Optional description text.
+
+        Returns:
+            CourseModel: Unsaved course instance.
+        """
         return cls(
             id=uuid.uuid4(),
             course_name=course_name,
@@ -45,6 +67,17 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
         )
     
     def get_translated_name(self, language: str) -> str:
+        """
+        Return the course name translated to the requested language.
+
+        Falls back to English or the original name if translation is unavailable.
+
+        Args:
+            language: Language code to translate into.
+
+        Returns:
+            str: Translated or default course name.
+        """
         try:
             requested_lang = LanguageEnum(language.lower())
         except ValueError:
@@ -62,6 +95,11 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
 
 
 class CourseTranslationModel(Base, UUIDPrimaryKeyMixin):
+    """
+    Represents a localized translation for a course name.
+
+    A unique constraint ensures one translation per language per course.
+    """
     __tablename__ = "course_translations"
 
     course_id: Mapped[UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
@@ -81,13 +119,14 @@ class CourseTranslationModel(Base, UUIDPrimaryKeyMixin):
 
     course: Mapped["CourseModel"] = relationship("CourseModel", back_populates="translations")
 
-    # @classmethod
-    # def create(
-    #     cls
-    # )
 
 
 class Association(Base, UUIDPrimaryKeyMixin):
+    """
+    Junction table mapping users to courses for enrollment relations.
+
+    Ensures that each user-course pair is unique.
+    """
     __tablename__="association"
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
@@ -109,6 +148,16 @@ class Association(Base, UUIDPrimaryKeyMixin):
         user_id: UUID,
         course_id: UUID,
     ) -> Self:
+        """
+        Factory helper to create a new association between user and course.
+
+        Args:
+            user_id: UUID of the user enrolling.
+            course_id: UUID of the course being enrolled in.
+
+        Returns:
+            Association: Unsaved association instance linking user and course.
+        """
         return cls(
             id=uuid.uuid4(),
             user_id=user_id,

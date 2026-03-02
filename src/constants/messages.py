@@ -2,6 +2,24 @@ SOMETHING_WENT_WRONG = "Something went wrong!"
 
 SUCCESS = "SUCCESS"
 
+USER_CREATED_SUCCESS = "User created successfully."
+
+USER_UPDATED = "User Updated Successfully."
+
+COURSE_UPDATED = "Course updated successfully."
+
+COURSE_CREATED = "Course created successfully."
+
+COURSE_DELETED = "Course Deleted Successfully."
+
+COURE_TRANSLATION_CREATED = "Course translation created successfully."
+
+LOG_OUT = "Log out successfully."
+
+ASSIGN_COURSES_TO_FACULTY = "Faculty assigned to courses successfully."
+
+STUDENT_ENROL = "student enrolled successfully."
+
 INVALID_TOKEN = "Invalid Token!"
 
 EXPIRED_TOKEN = "Expired Token!"
@@ -64,4 +82,14 @@ INVALID_TOKEN_OR_PAYLOAD = "Invalid token or token payload"
 
 USER_IS_NOT_STUDENT = "Logged user is not student"
 
+USER_IS_NOT_FACULTY = "Logged user is not Faculty"
+
 INVALID_FILETYPE = "Invalide file type."
+
+TRANSLATION_ALREDY_EXISTS = "translation alredy exists."
+
+COURSE_ALREADY_EXISTS = "Course already exists."
+
+ENROLLMENT_IMPORTED = "Enrollment imported successfully."
+
+NO_NEW_ENROLLMENT = "No new enrollments added. All records already exist."

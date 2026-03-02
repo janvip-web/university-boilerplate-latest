@@ -17,7 +17,9 @@ from apps.user.exceptions import (
     InvalidRequestException, 
     WeakPasswordException,
     UserNotStudent,
-    CourseNotFoundException
+    CourseNotFoundException,
+    EmailFieldRequired,
+    PasswordFieldRequired
 )
 from apps.user.models.user import UserModel, RoleModel
 from apps.course.models.course import CourseModel, CourseTranslationModel, Association
@@ -25,8 +27,6 @@ from apps.course.schemas.response import StudentCourseResponse
 from config import settings
 from core.common_helpers import create_tokens, decrypt, validate_input_fields
 from core.db import db_session
-from core.exceptions import BadRequestError
-from core.types import RoleType
 from core.utils.hashing import hash_password, verify_password
 from core.utils import strong_password
 from constants.roles import Roles
@@ -106,10 +106,10 @@ class UserService:
         print(email, password)
 
         if email is None:
-            raise BadRequestError(message=constants.EMAIL_FIELD_REQUIRED)
+            raise EmailFieldRequired
 
         if password is None:
-            raise BadRequestError(message=constants.PASSWORD_FIELD_REQUIRED)
+            raise PasswordFieldRequired
 
         user = await self.session.scalar(
             select(UserModel)
@@ -135,6 +135,22 @@ class UserService:
         return await create_tokens(user)
 
     async def _get_user_with_courses(self, user_id: UUID) -> UserModel:
+        """
+        Internal helper to fetch a user along with their course relationships.
+
+        Ensures the user exists and has a student role before returning. Used by
+        several public methods to avoid repeating query logic.
+
+        Args:
+            user_id: UUID of the user to retrieve.
+
+        Returns:
+            UserModel: The loaded user model including course translations.
+
+        Raises:
+            UserNotFoundException: If the user cannot be found.
+            UserNotStudent: If the user is not assigned the student role.
+        """
 
         result = await self.session.scalars(
             select(UserModel)
@@ -156,6 +172,17 @@ class UserService:
         return user
 
     async def get_my_courses(self, user_id: UUID):
+        """
+        Retrieve the list of courses for a given student user.
+
+        Translates course names into the user's preferred language when available.
+
+        Args:
+            user_id: UUID of the student whose courses are requested.
+
+        Returns:
+            List[StudentCourseResponse]: Courses with translated names and credits.
+        """
         user = await self._get_user_with_courses(user_id=user_id)
         
         preferred_lang = user.preferred_language
@@ -183,6 +210,16 @@ class UserService:
         return response_courses
     
     async def get_recent_course(self, user_id, limit: int = 5):
+        """
+        Fetch recently created courses that the user has not enrolled in.
+
+        Args:
+            user_id: UUID of the student user.
+            limit: Maximum number of courses to return (default 5).
+
+        Returns:
+            List[StudentCourseResponse]: Recent courses excluding those already enrolled.
+        """
         user = await self._get_user_with_courses(user_id=user_id)
 
 
@@ -199,8 +236,8 @@ class UserService:
             .limit(limit)
         )
 
-        result = await self.session.execute(stmt)
-        courses = result.scalars().all()
+        result = await self.session.scalars(stmt)
+        courses = result.all()
 
         response = []
 
@@ -285,6 +322,18 @@ class UserService:
         return current_user
     
     async def search_course(self, search:str):
+        """
+        Search for courses by name or translation.
+
+        Args:
+            search: Term to match against course names or their translations.
+
+        Returns:
+            List[CourseModel]: Matching course records.
+
+        Raises:
+            CourseNotFoundException: If no courses match the search term.
+        """
           
         stmt = (
             select(CourseModel)
@@ -298,8 +347,8 @@ class UserService:
             .distinct()
         )
 
-        result = await self.session.execute(stmt)
-        courses = result.scalars().all()
+        result = await self.session.scalars(stmt)
+        courses = result.all()
 
         if not courses:
             raise CourseNotFoundException
@@ -307,25 +356,16 @@ class UserService:
         return courses
 
 
-
-        stmt = (
-            select(CourseModel)
-            .options(selectinload(CourseModel.students))
-            .where(
-                UserModel.is_deleted.is_(False),
-            )
-            .options(
-                selectinload(CourseModel.translations),
-                selectinload(CourseModel.faculty)
-            )
-        )
-
-        result = await self.session.scalars(stmt)
-        courses = result.all()
-
-        return courses
-    
     async def export_my_courses(self, user_id: UUID)-> StreamingResponse:
+        """
+        Export the authenticated user's courses as an Excel workbook.
+
+        Args:
+            user_id: UUID of the student user.
+
+        Returns:
+            bytes: Binary content of the generated Excel file.
+        """
         user = await self._get_user_with_courses(user_id = user_id)
 
         preferred_language = user.preferred_language

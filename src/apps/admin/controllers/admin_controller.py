@@ -142,7 +142,7 @@ async def logout(
     request: Request,
     # user: Annotated[UserModel, Depends(AdminHasPermission())],
     service: Annotated[AdminUserService, Depends()],
-) -> BaseResponse[BaseUserResponse]:
+) -> BaseResponse:
     """
     Logout the authenticated admin user.
 

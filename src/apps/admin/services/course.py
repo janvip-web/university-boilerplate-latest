@@ -17,20 +17,56 @@ from apps.course.models.course import CourseModel, CourseTranslationModel
 from apps.course.schemas.request import CourseRequest, CourseTranslationRequest
 from apps.user.exceptions import (
     CourseNotFoundException,
-    InvalidRequestException
+    InvalidRequestException,
+    TranslationExists,
+    CourseAlreadyExistsException
 )
-from core.exceptions import BadRequestError
+
+import constants
 from core.db import db_session
 from core.enum import LanguageEnum
-from apps.user.models.user import UserModel
+from core.utils.schema import SuccessResponse
 
 
 class AdminCourseService:
+    """
+    Service providing methods for managing admin-related course operations.
+    """
 
     def __init__(self, session:Annotated[AsyncSession, Depends(db_session)]):
+        """
+        Initialize the AdminCourseService with an asynchronous database session.
+
+        Args:
+            session (AsyncSession): Asynchronous database session injected via dependency.
+        """
         self.session = session
 
-    async def create_course(self, course_req: CourseRequest) -> CourseModel:
+    async def create_course(self, course_req: CourseRequest):
+        """
+        Create a new course record in the database.
+
+        Args:
+            course_req (CourseRequest): Pydantic schema containing course name, credit,
+                and description.
+
+        Returns:
+            CourseModel: The newly created course model instance.
+
+        Raises:
+            Error: If provided data is invalid or missing required fields.
+        """
+
+                # 1️⃣ Check if course already exists
+        existing_course = await self.session.scalar(
+            select(CourseModel).where(
+                CourseModel.course_name == course_req.course_name,
+            )
+        )
+
+        if existing_course:
+            raise CourseAlreadyExistsException 
+        
         course_name = course_req.course_name
         course_credit = course_req.course_credit
         course_description = course_req.course_description
@@ -48,70 +84,25 @@ class AdminCourseService:
                 course_name = course_req.course_name
             )
         ]
-        self.session.add(course) # suceess response
-        return course
-
-    async def bulk_create_from_csv(self, file) -> dict:
-        """Parse an uploaded CSV of courses and insert them in bulk.
-
-        The CSV must have headers: ``course_name``, ``course_credit`` (optional) and
-        ``course_description`` (optional). Rows with missing names or invalid
-        credit values are skipped and reported in the returned error list.
-
-        Returns a summary dict with ``created`` count and ``errors`` list.
-        """
-
-
-        content = await file.read()
-        try:
-            text = content.decode("utf-8")
-        except Exception:
-            raise BadRequestError(message="Unable to decode CSV file; ensure it is UTF-8")
-
-        reader = csv.DictReader(StringIO(text))
-        created = []
-        errors = []
-        row_num = 1
-
-        for row in reader:
-            row_num += 1
-            name = row.get("course_name")
-            credit_raw = row.get("course_credit")
-            description = row.get("course_description")
-            if not name:
-                errors.append({"row": row_num, "error": "course_name is required"})
-                continue
-            try:
-                credit = int(credit_raw) if credit_raw else None
-            except ValueError:
-                errors.append({"row": row_num, "error": "course_credit must be integer"})
-                continue
-
-                # simple duplicate check
-            existing = await self.session.scalar(
-                select(CourseModel).where(CourseModel.course_name == name)
-            )
-            if existing:
-                errors.append({"row": row_num, "error": "course already exists"})
-                continue
-
-            course = CourseModel.create(
-                    course_name=name,
-                    course_credit=credit,
-                    course_description=description,
-            )
-            self.session.add(course)
-                # add default translation for EN
-            course.translations = [
-                CourseTranslationModel(
-                        language_code=LanguageEnum.EN,
-                        course_name=name,
-                    )
-                ]
-            created.append(course)
-        return {"created": len(created), "errors": errors}
+         # suceess response
+        return SuccessResponse(message=constants.COURSE_CREATED)
     
-    async def add_course_translation(self, course_id:UUID, request:CourseTranslationRequest):
+    async def add_course_translation(self, course_id:UUID, course_name: str, language_code: str):
+        """
+        Add a translation entry for an existing course.
+
+        Args:
+            course_id (UUID): Identifier of the course to translate.
+            request (CourseTranslationRequest): Schema containing language_code and
+                translated course_name.
+
+        Returns:
+            CourseTranslationModel: The newly created translation record.
+
+        Raises:
+            CourseNotFoundException: If no course exists with the given ID.
+            Error: If a translation for the specified language already exists.
+        """
         course = await self.session.scalar(
             select(CourseModel).where(CourseModel.id == course_id)
         )
@@ -119,28 +110,22 @@ class AdminCourseService:
         if not course:
             raise CourseNotFoundException
         
-        # if request.language_code == LanguageEnum.EN:
-        #     raise BadRequestError(
-        #         message="Use update_course API to modify English name"
-        #     )
-        
         existing_translations = await self.session.scalar(
             select(CourseTranslationModel).where(
             CourseTranslationModel.course_id == course_id,
-            CourseTranslationModel.language_code == request.language_code
+            CourseTranslationModel.language_code == language_code
             )
         )
         if existing_translations:
-            raise BadRequestError(
-            message=f"Translation already exists for language {request.language_code}"
-        )
+            raise TranslationExists
+        
         translation = CourseTranslationModel(
             course_id=course_id,
-            language_code = request.language_code,
-            course_name = request.course_name
+            language_code = language_code,
+            course_name = course_name
         )
         self.session.add(translation)
-        return translation
+        return SuccessResponse(message=constants.COURE_TRANSLATION_CREATED)
 
 
     
@@ -152,6 +137,22 @@ class AdminCourseService:
         sort_by: str,
         order: str,
         ):
+        """
+        Construct a base SQLAlchemy query for courses with filtering and sorting.
+
+        This internal helper centralizes logic used across several public methods
+        to filter by course name, credit, search terms, and sort order.
+
+        Args:
+            course_name: Optional substring to match course names.
+            course_credit: Optional exact credit value to filter by.
+            search: Optional global search term matching name, description, or credit.
+            sort_by: Field name used for ordering results.
+            order: "asc" or "desc" specifying sort direction.
+
+        Returns:
+            sqlalchemy.sql.Select: The constructed query object.
+        """
 
         stmt = select(CourseModel)
 
@@ -199,6 +200,20 @@ class AdminCourseService:
                               sort_by:str, order:str
                               
                               ) -> Page[CourseModel]:
+        """
+        Retrieve a paginated list of courses with optional filters.
+
+        Args:
+            param: Pagination parameters (page size, number).
+            course_name: Optional filter for a substring match on course names.
+            course_credit: Optional filter for exact credit value.
+            search: Optional global search term.
+            sort_by: Field name to sort results by.
+            order: "asc" or "desc" sort direction.
+
+        Returns:
+            Page[CourseModel]: Paginated page of courses matching criteria.
+        """
         
         stmt = self._build_course_query(course_name=course_name,
                                         course_credit=course_credit,
@@ -218,14 +233,30 @@ class AdminCourseService:
         sort_by: str,
         order: str,
     ) -> Page[CourseModel]:
+        """
+        Retrieve courses matching both name and credit filters, with pagination.
+
+        Returns an empty paginated result if no courses match the criteria or
+        if required parameters are missing.
+
+        Args:
+            param: Pagination parameters (page size, number).
+            course_name: Substring to match against course names (optional).
+            course_credit: Exact credit value to match (optional).
+            sort_by: Field name to sort results by.
+            order: "asc" or "desc" sort direction.
+
+        Returns:
+            Page[CourseModel]: Paginated list of matching courses, empty if no matches.
+        """
 
         stmt = select(CourseModel)
 
-        # ✅ If both not provided → return empty result
+        # If both not provided → return empty result
         if not course_name or course_credit is None:
-            raise InvalidRequestException(message="Both course_name and course_credit are required.")
+            return await paginate(self.session, stmt, param)
 
-        # ✅ Apply BOTH filters together
+        # Apply BOTH filters together
         stmt = stmt.where(
             and_(
                 CourseModel.course_name.ilike(f"%{course_name}%"),
@@ -246,13 +277,22 @@ class AdminCourseService:
         stmt = stmt.order_by(column.desc() if order == "desc" else column.asc())
 
         result = await paginate(self.session, stmt, param)
-            # ✅ 2️⃣ If no records found
-        if not result.items:
-            raise CourseNotFoundException(message="No course found matching both course_name and course_credit.")
-
+        # Return result even if empty
         return result
 
     async def get_course_by_id(self, course_id:UUID):
+        """
+        Retrieve a single course by its unique identifier.
+
+        Args:
+            course_id (UUID): The ID of the course to fetch.
+
+        Returns:
+            CourseModel: The requested course model.
+
+        Raises:
+            CourseNotFoundException: If no course exists with the provided ID.
+        """
         course = await self.session.scalar(
             select(CourseModel).where(CourseModel.id == course_id)
         )
@@ -261,7 +301,20 @@ class AdminCourseService:
         return course
     
     async def update_course_by_id(self, course_id:UUID, course_req:CourseRequest):
-# on do conflit update
+        """
+        Update an existing course's details.
+
+        Args:
+            course_id (UUID): The ID of the course to update.
+            course_req (CourseRequest): Schema containing updated course information.
+
+        Returns:
+            CourseModel: The updated course model instance.
+
+        Raises:
+            CourseNotFoundException: If the course with the given ID does not exist.
+        """
+        # on do conflit update
         stmt = (update(CourseModel).where(CourseModel.id == course_id)
                 .values(
                     course_name = course_req.course_name,
@@ -275,17 +328,29 @@ class AdminCourseService:
         if not updated_course :
             raise CourseNotFoundException
         
-        return updated_course
+        return SuccessResponse(message=constants.COURSE_UPDATED)
     
     
     async def delete_course_by_id(self, course_id:UUID):
+        """
+        Delete a course by its identifier.
+
+        Args:
+            course_id (UUID): The ID of the course to delete.
+
+        Returns:
+            dict: A message confirming successful deletion.
+
+        Raises:
+            CourseNotFoundException: If no course exists with the provided ID.
+        """
 
         stmt = delete(CourseModel).where(CourseModel.id == course_id)
         course = await self.session.execute(stmt)
         if course.rowcount == 0:
             raise CourseNotFoundException
 
-        return {"message": "course deleted successfully"}
+        return SuccessResponse(message=constants.COURSE_DELETED)
 
     
 
@@ -301,8 +366,8 @@ class AdminCourseService:
                                         sort_by=sort_by,
                                         order=order)
         
-        result = await self.session.execute(stmt)
-        courses = result.scalars().all()
+        result = await self.session.scalars(stmt)
+        courses = result.all()
 
         wb = Workbook()
         ws = wb.active

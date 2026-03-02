@@ -48,9 +48,14 @@ async def create_tokens(user: UserModel) -> dict[str, str]:
     Create access-token and refresh-token for a user.
 
     Args:
-        role_id: The role ID of the user.
-        user_id:
-    :return: A dictionary containing access-token and refresh-token.
+        user: The user model instance for which to generate tokens.
+
+    Returns:
+        A dict with keys ``access_token`` and ``refresh_token`` containing the
+        encoded JWT strings.
+
+    Raises:
+        InvalidRoleException: If the user's role is not recognised.
     """
     role = user.role
     if role in [Roles.STUDENT, Roles.FACULTY]:
@@ -75,9 +80,16 @@ async def create_tokens(user: UserModel) -> dict[str, str]:
 
 def validate_string_fields(values) -> dict:
     """
-    Validate string fields for empty strings.
-    :param values: Values to be validated.
-    :return: Received values.
+    Ensure that provided dictionary string values are not empty.
+
+    Iterates through ``values`` and raises ``EmptyDescriptionException`` if any
+    string is blank or whitespace-only.
+
+    Args:
+        values: Mapping of field names to values.
+
+    Returns:
+        The original ``values`` mapping if all checks pass.
     """
     for field_name, value in values.items():
         if isinstance(value, str) and not value.strip():

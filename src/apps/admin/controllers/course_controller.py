@@ -27,16 +27,23 @@ router = APIRouter(prefix="/admin/course", tags=["Course Control by Admin"], dep
 async def create_course(
     body: Annotated[CourseRequest, Body()],
     service: Annotated[AdminCourseService, Depends()],
-) -> BaseResponse[CourseResponse]:
+) -> BaseResponse:
     """
     Create a new course.
 
+    This endpoint allows admins to create a new course with course information
+    such as course name, credit, and description.
+
     Args:
-        body (CourseRequest): The request object containing course information.
-        service (AuthService): The authentication service.
+        body: The request object containing course information
+        service: AdminCourseService instance for business logic
 
     Returns:
-        BaseResponse[CourseResponse]: The response containing the created course information.
+        BaseResponse[CourseResponse]: Response containing the created course information
+
+    Raises:
+        BadRequestError: If required fields are missing or invalid
+        AdminHasPermission: If user doesn't have admin permissions
     """
     return BaseResponse(
         data=await service.create_course(body)
@@ -49,13 +56,33 @@ async def create_course(
         operation_id="hindi_translation",
         status_code=status.HTTP_200_OK
 )
-async def tanslator(
+async def translator(
     course_id: Annotated[UUID, Query()],
     request: Annotated[CourseTranslationRequest, Body()],
     service: Annotated[AdminCourseService, Depends()]
-)-> BaseResponse[CourseTranslationResponse]:
+)-> BaseResponse:
+    """
+    Add a translation for a course in a different language.
+
+    This endpoint allows admins to add translated content for a course,
+    such as course names and descriptions in different languages.
+
+    Args:
+        course_id: The UUID of the course to add translation for
+        request: CourseTranslationRequest containing translated course information
+        service: AdminCourseService instance for business logic
+
+    Returns:
+        BaseResponse[CourseTranslationResponse]: Response containing the added translation
+
+    Raises:
+        CourseNotFoundException: If the course is not found
+        BadRequestError: If required fields are missing or invalid
+        AdminHasPermission: If user doesn't have admin permissions
+    """
+
     return BaseResponse(
-        data = await service.add_course_translation(course_id=course_id, request=request)
+        data = await service.add_course_translation(course_id=course_id, **request.model_dump())
     )
 
 
@@ -74,11 +101,26 @@ async def export_courses(
     sort_by: Annotated[CourseSortField, Query()] = CourseSortField.created_at,
     order: Annotated[SortOrder, Query()] = SortOrder.desc,
 ):
-    """Return a spreadsheet containing every course (filtered by name).
+    """
+    Export courses to an Excel spreadsheet.
 
-    This endpoint streams an ``.xlsx`` file; if the optional ``openpyxl``
-    package isn't installed the result will be a CSV with the same filename,
+    This endpoint streams an Excel (.xlsx) file containing course data filtered by
+    optional parameters. If the openpyxl package is not available, returns CSV format
     which Excel can still open.
+
+    Args:
+        service: AdminCourseService instance for business logic
+        course_name: Optional filter for course name
+        course_credit: Optional filter for course credit 
+        search: Optional search term for course information
+        sort_by: Field to sort results by (default: created_at)
+        order: Sort order - ascending or descending (default: desc)
+
+    Returns:
+        StreamingResponse: Excel file as a streaming response
+
+    Raises:
+        AdminHasPermission: If user doesn't have admin permissions
     """
     data = await service.export_courses_excel(course_name=course_name,
                                               course_credit=course_credit,
@@ -109,6 +151,27 @@ async def get_all_courses_to_admin(
     sort_by: Annotated[CourseSortField, Query()] = CourseSortField.created_at,
     order: Annotated[SortOrder, Query()] = SortOrder.desc,
 ) -> BaseResponse[Page[CourseResponse]]:
+    """
+    Retrieve all courses with pagination and filtering options.
+
+    This endpoint returns a paginated list of all courses with optional filtering
+    by course name, credit hours, and search terms, as well as sorting capabilities.
+
+    Args:
+        page_params: Pagination parameters for page size and number
+        service: AdminCourseService instance for business logic
+        course_name: Optional filter for course name
+        course_credit: Optional filter for course credit 
+        search: Optional search term for course information
+        sort_by: Field to sort results by (default: created_at)
+        order: Sort order - ascending or descending (default: desc)
+
+    Returns:
+        BaseResponse[Page[CourseResponse]]: Paginated list of course responses
+
+    Raises:
+        AdminHasPermission: If user doesn't have admin permissions
+    """
     return BaseResponse(
         data = await service.get_all_courses(param=page_params, 
                                              course_name=course_name, 
@@ -130,6 +193,27 @@ async def search_courses_combined(
     sort_by: Annotated[CourseSortField, Query()] = CourseSortField.created_at,
     order: Annotated[SortOrder, Query()] = SortOrder.desc,
 )->BaseResponse[Page[CourseResponse]]:
+    """
+    Search courses by name and credit hours with pagination.
+
+    This endpoint provides a combined search functionality to filter courses
+    by both course name and credit hours simultaneously, with pagination support.
+
+    Args:
+        page_params: Pagination parameters for page size and number
+        service: AdminCourseService instance for business logic
+        course_name: Optional filter for course name
+        course_credit: Optional filter for course credit 
+        sort_by: Field to sort results by (default: created_at)
+        order: Sort order - ascending or descending (default: desc)
+
+    Returns:
+        BaseResponse[Page[CourseResponse]]: Paginated list of matching course responses
+
+    Raises:
+        BadRequestError: If search parameters are invalid
+        AdminHasPermission: If user doesn't have admin permissions
+    """
     return BaseResponse(
         data=await service.search_courses_by_name_and_credit(
             param=page_params,
@@ -151,6 +235,23 @@ async def get_course_by_id(
     course_id: Annotated[UUID, Path()],
     service: Annotated[AdminCourseService, Depends()]
 ) -> BaseResponse[CourseResponse]:
+    """
+    Retrieve a specific course by its ID.
+
+    This endpoint returns detailed information for a single course identified
+    by its UUID.
+
+    Args:
+        course_id: The UUID of the course to retrieve
+        service: AdminCourseService instance for business logic
+
+    Returns:
+        BaseResponse[CourseResponse]: Course response containing detailed course information
+
+    Raises:
+        CourseNotFoundException: If the course with the given ID is not found
+        AdminHasPermission: If user doesn't have admin permissions
+    """
     return BaseResponse(data = await service.get_course_by_id(course_id=course_id))
 
 
@@ -165,7 +266,26 @@ async def update_course_by_id(
     course_id: Annotated[UUID, Path()],
     body: Annotated[CourseRequest, Body()],
     service: Annotated[AdminCourseService, Depends()]
-) -> BaseResponse[CourseResponse]:
+) -> BaseResponse:
+    """
+    Update an existing course by its ID.
+
+    This endpoint allows admins to modify course information such as course name,
+    credit hours, and description for an existing course.
+
+    Args:
+        course_id: The UUID of the course to update
+        body: CourseRequest containing updated course information
+        service: AdminCourseService instance for business logic
+
+    Returns:
+        BaseResponse[CourseResponse]: Response containing the updated course information
+
+    Raises:
+        CourseNotFoundException: If the course with the given ID is not found
+        BadRequestError: If required fields are missing or invalid
+        AdminHasPermission: If user doesn't have admin permissions
+    """
     return BaseResponse(data = await service.update_course_by_id(course_id=course_id, course_req=body))
 
 @router.delete(
@@ -179,6 +299,23 @@ async def delete_course_by_id(
     course_id: Annotated[UUID, Path()],
     service: Annotated[AdminCourseService, Depends()]
 ) -> BaseResponse:
+    """
+    Delete a course by its ID.
+
+    This endpoint allows admins to delete a course from the system. This operation
+    may soft-delete the course to preserve historical data.
+
+    Args:
+        course_id: The UUID of the course to delete
+        service: AdminCourseService instance for business logic
+
+    Returns:
+        BaseResponse: Response confirming successful deletion
+
+    Raises:
+        CourseNotFoundException: If the course with the given ID is not found
+        AdminHasPermission: If user doesn't have admin permissions
+    """
     course = await service.delete_course_by_id(course_id=course_id)
     return BaseResponse(data=course)
 

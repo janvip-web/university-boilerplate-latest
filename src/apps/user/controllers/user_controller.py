@@ -30,7 +30,24 @@ async def sign_in(
     body: Annotated[EncryptedRequest, Body()],
     service: Annotated[UserService, Depends()],
 ) -> JSONResponse:
+    """
+    Authenticate a user and issue authentication tokens.
 
+    This endpoint handles user login with encrypted credentials, returning
+    access and refresh tokens and setting appropriate cookies on success.
+
+    Args:
+        request: The FastAPI request object.
+        body: EncryptedRequest containing login credentials.
+        service: UserService instance for business logic.
+
+    Returns:
+        JSONResponse: Response containing auth tokens and cookies.
+
+    Raises:
+        InvalidCredentialsException: If login credentials are invalid.
+        BadRequestError: If required fields are missing.
+    """
     res = await service.login_user(request=request, **body.model_dump())
 
     if "access_token" in res and res.get("access_token"):
@@ -43,7 +60,7 @@ async def sign_in(
             algorithms=settings.JWT_ALGORITHM,
         )
 
-        role = payload.get("role")   # 👈 Extract role_id
+        role = payload.get("role")   
 
         data = {
             "status": constants.SUCCESS,
@@ -67,91 +84,21 @@ async def get_self_handler(
     user: Annotated[UserModel, Depends(HasPermission(role_name=["STUDENT", "FACULTY"]))],
     service: Annotated[UserService, Depends()],
 ) -> BaseResponse[BaseUserResponse]:
-    
-    print("INSIDE SELF API")
     """
-    Get data for a user.
+    Retrieve profile information of the authenticated user.
 
     Args:
-        user (UserModel): The authenticated user.
-        service (AuthService): The authentication service.
+        user: Authenticated user model injected by the permission dependency.
+        service: UserService instance for business logic.
 
     Returns:
-        dict[str, Any]: The response containing the user data.
+        BaseResponse[BaseUserResponse]: The authenticated user's profile data.
+
+    Raises:
+        HasPermission: If the user lacks the required roles.
     """
+    # print("INSIDE SELF API")
     return BaseResponse(data=await service.get_self(user_id=user.id))
-
-
-# @router.get(
-#     "/{user_id}",
-#     status_code=status.HTTP_200_OK,
-#     dependencies=[Depends(HasPermission(role_name=["STUDENT", "FACULTY"]))],
-#     name="get user by id",
-#     description="Get User By Id",
-#     operation_id="get_user_by_id",
-#     deprecated=True
-# )
-# async def get_user_by_id(
-#     user_id: Annotated[UUID, Path()], service: Annotated[UserService, Depends()]
-# ) -> BaseResponse[BaseUserResponse]:
-#     """
-#     Get data for a user by ID.
-
-#     Args:
-#         user_id (int): The ID of the user.
-#         service (AuthService): The authentication service.
-
-#     Returns:
-#         dict[str, Any]: The response containing the user data.
-#     """
-#     return BaseResponse(data=await service.get_user_by_id(user_id=user_id))
-
-# router.put(
-#     "/{user_id}",
-#     status_code=status.HTTP_200_OK,
-#     dependencies=[Depends(HasPermission(role_name=["STUDENT", "FACULTY"]))],
-#     name="update user by id",
-#     description="Update User By Id",
-#     operation_id="update_user_by_id",
-# )
-# async def update_user_by_id(
-#     user_id: Annotated[UUID, Path()], service: Annotated[UserService, Depends()]
-# ) -> BaseResponse[BaseUserResponse]:
-
-#     return BaseResponse(data=await service.update_user_by_id(user_id=user_id))
-
-
-# @router.delete(
-#     "/{user_id}",
-#     status_code=status.HTTP_200_OK,
-#     dependencies=[Depends(HasPermission(role_name=["STUDENT", "FACULTY"]))],
-#     name="delete user by id",
-#     description="delete user by id",
-#     operation_id="delete_user_by_id",
-#     deprecated=True
-# )
-# async def delete_user_by_id(
-#     user_id: Annotated[UUID, Path()],
-#     service: Annotated[UserService, Depends()]
-# ) -> BaseResponse[BaseUserResponse]:
-#     deleted_user = await service.delete_user_by_id(user_id=user_id)
-#     return BaseResponse(data=deleted_user)
-
-
-# @router.delete(
-#     "/{user_id}",
-#     status_code=status.HTTP_200_OK,
-#     dependencies=[Depends(HasPermission(role_name=[""]))],
-#     name="soft delete user by id",
-#     description="soft delete user by id",
-#     operation_id="soft_delete_user_by_id",
-# )
-# async def soft_delete_user_by_id(
-#     user_id: Annotated[UUID, Path()],
-#     service: Annotated[UserService, Depends()]
-# ) -> BaseResponse[BaseUserResponse]:
-#     deleted_user = await service.soft_delete_user_by_id(user_id=user_id)
-#     return BaseResponse(data=deleted_user)
 
 @router.get(
     "/student/my-courses",
@@ -165,6 +112,22 @@ async def get_my_courses(
     service: Annotated[UserService , Depends()],
     current_user: Annotated[UserModel, Depends(HasPermission(role_name=["STUDENT","FACULTY"]))]
 )-> List[StudentCourseResponse]:
+    """
+    Get the courses associated with the current user.
+
+    This endpoint returns all courses the authenticated student or faculty member is
+    enrolled in or teaching.
+
+    Args:
+        service: UserService instance for business logic.
+        current_user: The authenticated user model.
+
+    Returns:
+        List[StudentCourseResponse]: A list of course responses for the user.
+
+    Raises:
+        HasPermission: If user does not have student or faculty role.
+    """
     return await service.get_my_courses(current_user.id)
 
 @router.get(
@@ -178,6 +141,22 @@ async def export_my_courses(
     service: Annotated[UserService, Depends()],
     current_user: Annotated[UserModel, Depends(HasPermission(role_name=["STUDENT","FACULTY"]))]
 )-> StreamingResponse:
+    """
+    Export the user's courses to an Excel file.
+
+    A spreadsheet containing all courses for the authenticated user is generated
+    and streamed back as an ``.xlsx`` file.
+
+    Args:
+        service: UserService instance for business logic.
+        current_user: The authenticated user model.
+
+    Returns:
+        StreamingResponse: The Excel workbook as a downloadable stream.
+
+    Raises:
+        HasPermission: If user lacks the required role.
+    """
     data = await service.export_my_courses(current_user.id)
     fname = "my_courses.xlsx"
 
@@ -201,26 +180,26 @@ async def change_password(
     service: Annotated[UserService, Depends()],
 ) -> BaseResponse[BaseUserResponse]:
     """
-    Change the password for the authenticated admin user.
+    Change the password for the authenticated user.
 
-    This endpoint allows admins to update their password. The request must
-    include the current password for verification and a new password that
-    meets security requirements.
+    This endpoint allows students or faculty to update their account password.
+    The request must include the current password for verification and a new
+    password that meets security requirements.
 
     Args:
         request: The FastAPI request object
-        user: Authenticated admin user from token
-        body: Encrypted request containing current and new passwords
-        service: AdminUserService instance for business logic
+        user: Authenticated user model from token
+        body: EncryptedRequest containing current and new passwords
+        service: UserService instance for business logic
 
     Returns:
-        BaseResponse[BaseUserResponse]: Updated admin user data
+        BaseResponse[BaseUserResponse]: Updated user data
 
     Raises:
         InvalidCredentialsException: If current password is incorrect
         WeakPasswordException: If new password doesn't meet requirements
         UserNotFoundException: If user is not found
-        AdminHasPermission: If user doesn't have admin permissions
+        HasPermission: If user lacks the required role
     """
     return BaseResponse(
         data=await service.change_password(
@@ -239,6 +218,19 @@ async def search_course(
     search: Annotated[str, Query()],
     service: Annotated[UserService, Depends()]
 )-> BaseResponse[List[CourseResponse]]:
+    """
+    Search for courses by name.
+
+    Args:
+        search: Query string to search in course names.
+        service: UserService instance for business logic.
+
+    Returns:
+        BaseResponse[List[CourseResponse]]: A list of matching courses.
+
+    Raises:
+        BadRequestError: If search term is empty or invalid.
+    """
     return BaseResponse(
         data = await service.search_course(search=search)
     )
@@ -256,7 +248,20 @@ async def get_recent_courses(
     current_user: Annotated[UserModel, Depends(HasPermission(role_name=["STUDENT", "FACULTY"]))],
     limit: Annotated[int, Query()] = 5
 ) -> List[StudentCourseResponse]:
+    """
+    Fetch the most recently added courses not yet enrolled by the user.
 
+    Args:
+        service: UserService instance for business logic.
+        current_user: The authenticated user model.
+        limit: Maximum number of courses to return (default 5).
+
+    Returns:
+        List[StudentCourseResponse]: Recent course list for the user.
+
+    Raises:
+        HasPermission: If the user lacks appropriate role.
+    """
     return await service.get_recent_course(
         user_id=current_user.id,
         limit=limit

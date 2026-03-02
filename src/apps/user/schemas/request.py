@@ -1,7 +1,8 @@
 from core.utils import CamelCaseModel
+from pydantic import BaseModel
 
 
-class EncryptedRequest(CamelCaseModel):
+class EncryptedRequest(BaseModel):
     """
     request model for encrypted data
     """
@@ -10,7 +11,7 @@ class EncryptedRequest(CamelCaseModel):
     encrypted_key: str
     iv: str
 
-class CreateUserRequest(CamelCaseModel):
+class CreateUserRequest(BaseModel):
     """
     request model for creating user
     """

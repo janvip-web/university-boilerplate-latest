@@ -1,9 +1,9 @@
 from uuid import UUID
-
+from pydantic import BaseModel
 from core.utils import CamelCaseModel
 
 
-class BaseUserResponse(CamelCaseModel):
+class BaseUserResponse(BaseModel):
     """
     Base response object for user information.
 
@@ -11,6 +11,7 @@ class BaseUserResponse(CamelCaseModel):
         id (UUID): The user's unique identifier.
         first_name (str): The user's first name.
         last_name (str): The user's last name.
+        role (str): The user's role.
     """
 
     id: UUID

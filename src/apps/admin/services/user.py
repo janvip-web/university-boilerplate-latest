@@ -23,16 +23,20 @@ from apps.user.exceptions import (
     WeakPasswordException,
     CourseNotFoundException,
     UserNotLogginException,
-    InvalidTokenException
+    EmailFieldRequired,
+    PasswordFieldRequired,
+    RoleNotFoundException,
+    UserNotFaculty
 )
 from apps.user.models.user import UserModel, RoleModel
 from config import settings
 from core.common_helpers import create_tokens, decrypt, validate_email, validate_input_fields
 from core.db import db_session
-from core.exceptions import BadRequestError, InvalidJWTTokenException, UnauthorizedError
+from core.exceptions import InvalidJWTTokenException
 from core.types import RoleType
 from core.utils import strong_password
 from core.utils.hashing import hash_password, verify_password
+from core.utils.schema import SuccessResponse
 from core.utils.set_cookies import delete_cookies
 from apps.admin.schemas.assign_faculty_request import AssignFacultyRequest
 from apps.admin.schemas.student_course_response import StudentRankResponse
@@ -85,10 +89,10 @@ class AdminUserService:
         password = decrypted_data.get("password")
 
         if email is None:
-            raise BadRequestError(message=constants.EMAIL_FIELD_REQUIRED)
+            raise EmailFieldRequired
 
         if password is None:
-            raise BadRequestError(message=constants.PASSWORD_FIELD_REQUIRED)
+            raise PasswordFieldRequired
 
         validate_email(email=email)
 
@@ -97,7 +101,6 @@ class AdminUserService:
             .options(selectinload(UserModel.role_ref))
             .where(
                 and_(UserModel.email == email, )
-                    #  RoleModel.role == Roles.ADMIN.upper())
             )
         )
 
@@ -244,7 +247,7 @@ class AdminUserService:
 
     async def create_user(
         self, request: Request, encrypted_data: str, encrypted_key: str, iv: str
-    ) -> UserModel:
+    ) :
         """
         Create a new user.
 
@@ -294,7 +297,7 @@ class AdminUserService:
             select(RoleModel).where(RoleModel.role == role_name.upper())
         )
         if not role:
-            raise BadRequestError(message=constants.ROLE_NOT_FOUND)
+            raise RoleNotFoundException
 
         user = UserModel.create(
             first_name=first_name,
@@ -306,91 +309,12 @@ class AdminUserService:
             preferred_language=preferred_language
         )
         self.session.add(user)
-        return user
+        return SuccessResponse(message=constants.USER_CREATED_SUCCESS)
     
-    # async def bulk_create_users(self, file) -> dict:
-    #     """Parse a CSV upload and create multiple users.
-
-    #     Expected headers: first_name,last_name,email,phone,password,role_name,
-    #     preferred_language (optional).
-
-    #     Rows failing validation or which conflict with existing users are
-    #     skipped; each failure is reported in the returned ``errors`` list.
-    #     """
-    #     import csv
-    #     from io import StringIO
-
-    #     content = await file.read()
-    #     try:
-    #         text = content.decode("utf-8")
-    #     except Exception:
-    #         raise BadRequestError(message="Unable to decode CSV file; ensure it is UTF-8")
-
-    #     reader = csv.DictReader(StringIO(text))
-    #     created = []
-    #     errors = []
-    #     row_num = 1
-    #     async with self.session.begin():
-    #         for row in reader:
-    #             row_num += 1
-    #             first_name = row.get("first_name")
-    #             last_name = row.get("last_name")
-    #             email = row.get("email")
-    #             phone = row.get("phone")
-    #             password = row.get("password")
-    #             role_name = row.get("role_name")
-    #             pref_lang = row.get("preferred_language")
-
-    #             try:
-    #                 validate_input_fields(
-    #                     first_name=first_name,
-    #                     email=email,
-    #                     phone=phone,
-    #                     password=password,
-    #                 )
-    #             except Exception as e:
-    #                 errors.append({"row": row_num, "error": str(e)})
-    #                 continue
-
-    #             # check duplicates
-    #             existing = await self.session.scalar(
-    #                 select(UserModel).where(
-    #                     or_(UserModel.email == email, UserModel.phone == phone)
-    #                 )
-    #             )
-    #             if existing:
-    #                 errors.append({"row": row_num, "error": "email or phone already exists"})
-    #                 continue
-
-    #             role = await self.session.scalar(
-    #                 select(RoleModel).where(RoleModel.role == role_name.upper())
-    #             )
-    #             if not role:
-    #                 errors.append({"row": row_num, "error": "role not found"})
-    #                 continue
-
-    #             try:
-    #                 hashed = await hash_password(password)
-    #             except Exception as e:
-    #                 errors.append({"row": row_num, "error": "password hashing failed"})
-    #                 continue
-
-    #             user = UserModel.create(
-    #                 first_name=first_name,
-    #                 last_name=last_name,
-    #                 phone=phone,
-    #                 password=hashed,
-    #                 email=email,
-    #                 role_id=role.role_id,
-    #                 preferred_language=pref_lang or None,
-    #             )
-    #             self.session.add(user)
-    #             created.append(user)
-    #     return {"created": len(created), "errors": errors}
 
     async def update_user(
         self, user_id: UUID, request: Request, encrypted_data: str, encrypted_key: str, iv: str
-    ) -> UserModel:
+    ) :
         """
         Update an existing user's information.
 
@@ -414,12 +338,6 @@ class AdminUserService:
         )
         decrypted_data = json.loads(decrypted_data)
 
-        # first_name = decrypted_data.get("first_name")
-        # last_name = decrypted_data.get("last_name")
-        # phone = decrypted_data.get("phone")
-        # preferred_langugae = decrypted_data.get("preferred_language")
-
-        # validate_input_fields(first_name=first_name)
         allowed_fields = {"first_name", "last_name", "phone", "preferred_language"}
 
         update_data = {
@@ -438,24 +356,11 @@ class AdminUserService:
             .returning(UserModel)
         )
         updated_user = await self.session.scalar(stmt)
-        # user = await self.session.scalar(
-        #     select(UserModel).where(UserModel.id == user_id)
-        # )
 
         if not updated_user:
             raise UserNotFoundException
-        # if not user:
-        #     raise UserNotFoundException
 
-        # user.first_name = first_name
-        # if last_name:
-        #     user.last_name = last_name
-        # if phone:
-        #     user.phone = phone
-        # if preferred_langugae:
-        #     user.preferred_language = preferred_langugae
-
-        return updated_user
+        return SuccessResponse(message=constants.USER_UPDATED)
     
     async def get_user_by_id(self, user_id: UUID):
         """
@@ -505,11 +410,23 @@ class AdminUserService:
         if result.rowcount == 0:
             raise UserNotFoundException
         # return searched_user
-        return {"message": "User deleted successfully"}
+        return SuccessResponse(message=constants.USER_DELETED)
     
     
     async def update_user_status(self, user_id: UUID, is_activated: bool):
+        """
+        Update the activation status of a user.
 
+        Args:
+            user_id (UUID): The ID of the user to update.
+            is_activated (bool): The new activation status for the user.
+
+        Returns:
+            UserModel: The updated user model with the new activation status.
+
+        Raises:
+            UserNotFoundException: If the user with the given UUID is not found.
+        """
         stmt = (update(UserModel).where(UserModel.id == user_id, UserModel.is_deleted.is_(False))
                 .values(is_activated = is_activated)
                 .returning(UserModel.id, UserModel.is_activated)
@@ -523,7 +440,18 @@ class AdminUserService:
     
     
     async def restore_user(self, user_id: UUID):
+        """
+        Restore a soft-deleted user by marking them as not deleted.
 
+        Args:
+            user_id (UUID): The ID of the user to restore.
+
+        Returns:
+            UserModel: The restored user model.
+
+        Raises:
+            UserNotFoundException: If the user with the given UUID is not found or is not deleted.
+        """
         stmt=(update(UserModel).where(UserModel.id == user_id, UserModel.is_deleted.is_(True))
              .values(is_deleted=False)
              .returning(UserModel.id)
@@ -537,6 +465,19 @@ class AdminUserService:
     
 
     async def logout(self, request: Request)-> JSONResponse:
+        """
+        Log out a user by invalidating their authentication tokens.
+
+        Args:
+            request (Request): The incoming request object containing authentication cookies.
+
+        Returns:
+            JSONResponse: A response with success message and cookies cleared.
+
+        Raises:
+            UserNotLogginException: If the user is not logged in.
+            InvalidJWTTokenException: If the access token is expired or invalid.
+        """
         access_token = (
         request.cookies.get("accessToken")
         or request.cookies.get("adminAccessToken")
@@ -564,16 +505,29 @@ class AdminUserService:
             
 
         response = JSONResponse(
-            content={
-                "status": "SUCCESS",
-                "message": "Logged out successfully"
-            }
-        )
-
+                        content={
+                            "status": "SUCCESS",
+                            "message": constants.LOG_OUT
+                        }
+                    )
         return delete_cookies(response=response, role=role)
     
     
     async def assign_faculty_to_course(self, req: AssignFacultyRequest):
+        """
+        Assign a faculty member to one or more courses.
+
+        Args:
+            req (AssignFacultyRequest): Request object containing faculty_id and list of course_ids.
+
+        Returns:
+            dict: A success message indicating faculty assignment completion.
+
+        Raises:
+            UserNotFoundException: If the faculty member with the given ID is not found.
+            UserNotFaculty: If the user is not a faculty member.
+            CourseNotFoundException: If any of the specified courses are not found.
+        """
         faculty = await self.session.scalar(
             select(UserModel)
             .options(selectinload(UserModel.role_ref))
@@ -583,13 +537,13 @@ class AdminUserService:
             raise UserNotFoundException
         
         if faculty.role_ref.role != Roles.FACULTY:
-            raise BadRequestError(message="User is not a faculty")
+            raise UserNotFaculty
         
-        result = await self.session.execute(
+        result = await self.session.scalars(
             select(CourseModel).where(CourseModel.id.in_(req.course_id))
         )
 
-        courses = result.scalars().all() 
+        courses = result.all() 
         if len(courses) != len(req.course_id):
             raise CourseNotFoundException
 
@@ -597,12 +551,20 @@ class AdminUserService:
         for course in courses:
             course.faculty_id = req.faculty_id
 
-        return {"message": "Faculty assigned to course successfully"}
+        return SuccessResponse(message=constants.ASSIGN_COURSES_TO_FACULTY)
     
 
 
     async def get_student_with_courses(self, language: str):
+        """
+        Retrieve all students with their enrolled courses in a specified language.
 
+        Args:
+            language (str): The language code for course translations (e.g., 'en', 'es').
+
+        Returns:
+            list[UserModel]: A list of student users with their courses, including translated course names.
+        """
         result = await self.session.scalars(
             select(UserModel)
             .options(
@@ -626,14 +588,17 @@ class AdminUserService:
                         None,
                     )
 
-                # instead of writing to course.course_name (which would
-                # mark the instance dirty and eventually update the DB),
-                # stash the translated title on a separate attribute.
                 course.translated_name = translation.course_name if translation else course.course_name
 
         return students
     
     async def get_course_with_more_than_one_student(self):
+        """
+        Retrieve courses that have more than one student enrolled.
+
+        Returns:
+            list[str]: A list of course names that have multiple students.
+        """
         subq = (
             select(Association.course_id)
             .group_by(Association.course_id)
@@ -647,6 +612,15 @@ class AdminUserService:
     
 
     async def get_faculty_with_courses(self, language: str):
+        """
+        Retrieve all faculty members with their assigned courses in a specified language.
+
+        Args:
+            language (str): The language code for course translations (e.g., 'en', 'es').
+
+        Returns:
+            list[UserModel]: A list of faculty users with their assigned courses, including translated course names.
+        """
         result = await self.session.scalars(
             select(UserModel)
             .options(selectinload(UserModel.faculty_courses).selectinload(CourseModel.translations))
@@ -673,6 +647,15 @@ class AdminUserService:
         return faculty_members
     
     async def rank_student(self, params:Params) :
+        """
+        Retrieve a paginated list of students ranked by the number of courses they are enrolled in.
+
+        Args:
+            params (Params): Pagination parameters to control the page size and number.
+
+        Returns:
+            Page[dict]: A paginated list of students with their rank and total course count.
+        """
         stmt = (select(UserModel.id, 
                       UserModel.first_name,
                       UserModel.last_name,

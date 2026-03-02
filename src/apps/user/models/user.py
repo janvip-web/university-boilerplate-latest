@@ -54,6 +54,13 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
     
     @property
     def role(self) -> str | None:
+        """
+        Convenience property to get the user's role name.
+
+        Returns:
+            Optional[str]: The role string from the related RoleModel, or None
+            if no role is associated.
+        """
         return self.role_ref.role if self.role_ref else None
 
     @classmethod
@@ -94,6 +101,12 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
 
 
 class RoleModel(Base):
+    """
+    Model representing user roles.
+
+    Each role has a unique name and may be referenced by multiple users through
+    a foreign key relationship.
+    """
     __tablename__ = "roles"
 
     role_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

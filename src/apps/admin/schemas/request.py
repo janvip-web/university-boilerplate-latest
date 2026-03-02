@@ -1,10 +1,10 @@
 from pydantic import model_validator
-
+from pydantic import BaseModel
 from core.common_helpers import validate_string_fields
 from core.utils import CamelCaseModel
 
 
-class EncryptedRequest(CamelCaseModel):
+class EncryptedRequest(BaseModel):
     """
     request model for encrypted data
     """
