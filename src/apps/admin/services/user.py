@@ -1,6 +1,7 @@
 import json
 from typing import Annotated, Optional
 from uuid import UUID
+from datetime import datetime
 
 from fastapi import Depends, Request, Query
 from fastapi.responses import JSONResponse
@@ -9,9 +10,11 @@ from fastapi_pagination.ext.sqlalchemy import paginate
 import jwt
 from sqlalchemy import and_, select, or_ , update, func, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only, selectinload, Load, joinedload
+from sqlalchemy.orm import load_only, selectinload, Load, joinedload, with_loader_criteria
 
 from apps.course.models.course import CourseModel, Association, CourseTranslationModel
+from apps.admin.schemas.admin_user_response import AdminListUsersResponse
+from apps.user.schemas.response import BaseUserResponse
 import constants
 from constants.messages import INVALID_TOKEN_OR_PAYLOAD
 from core.enum import LanguageEnum
@@ -26,7 +29,8 @@ from apps.user.exceptions import (
     EmailFieldRequired,
     PasswordFieldRequired,
     RoleNotFoundException,
-    UserNotFaculty
+    UserNotFaculty,
+    DOBValidationException
 )
 from apps.user.models.user import UserModel, RoleModel
 from config import settings
@@ -115,8 +119,8 @@ class AdminUserService:
 
         # if not user.is_activated:  
         #     raise UnauthorizedError("Account deactivated")
-        print("Password plain:", repr(password))
-        print("Password DB:", repr(user.password))
+        # print("Password plain:", repr(password))
+        # print("Password DB:", repr(user.password))
 
         verify = await verify_password(
             hashed_password=user.password, plain_password=password
@@ -128,7 +132,7 @@ class AdminUserService:
     
 
 
-    async def get_users(self, params: Params, role_id: int | None = None) -> Page[UserModel]:
+    async def get_users(self, params: Params, role_id: int | None = None) -> Page[AdminListUsersResponse]:
         """
         Retrieve a paginated list of users.
 
@@ -142,18 +146,9 @@ class AdminUserService:
             UserNotFoundException: If the user with the given UUID is not found.
         """
         query = (select(UserModel)
-                 .join(UserModel.role_ref)
                 .where(UserModel.is_deleted.is_(False))
             .options(
-            Load(UserModel).load_only(
-                UserModel.first_name,
-                UserModel.last_name,
-                UserModel.email,
-                UserModel.phone,
-                UserModel.role_id,
-                UserModel.preferred_language,
-            ),
-            joinedload(UserModel.role_ref).load_only(RoleModel.role)
+                selectinload(UserModel.role_ref)
         ))
     
         if role_id is not None:
@@ -161,7 +156,7 @@ class AdminUserService:
 
         return await paginate(self.session, query, params)
 
-    async def get_self_admin(self, user_id: UUID) -> UserModel:
+    async def get_self_admin(self, user_id: UUID) -> BaseUserResponse:
         """
         Retrieve user information by user ID.
 
@@ -338,13 +333,19 @@ class AdminUserService:
         )
         decrypted_data = json.loads(decrypted_data)
 
-        allowed_fields = {"first_name", "last_name", "phone", "preferred_language"}
+        allowed_fields = {"first_name", "last_name", "phone", "preferred_language","date_of_birth"}
 
-        update_data = {
-            key: value
-            for key, value in decrypted_data.items()
-            if key in allowed_fields and value is not None
-        }
+        update_data = {}
+            # key: value
+        for key, value in decrypted_data.items():
+            if key in allowed_fields and value is not None:
+                if key == "date_of_birth":
+                    try:
+                        value = datetime.strptime(value, "%d/%m/%Y").date()
+                    except ValueError:
+                        raise DOBValidationException
+
+            update_data[key] = value  
 
         if not update_data:
             None
@@ -436,7 +437,7 @@ class AdminUserService:
         if not updated_user:
             raise UserNotFoundException
 
-        return updated_user
+        return SuccessResponse(message=constants.USER_STATUS_UPDATED)
     
     
     async def restore_user(self, user_id: UUID):
@@ -461,7 +462,7 @@ class AdminUserService:
         if not restored_user:
             raise UserNotFoundException
 
-        return restored_user
+        return SuccessResponse(message=constants.USER_RESTORED)
     
 
     async def logout(self, request: Request)-> JSONResponse:
@@ -568,10 +569,11 @@ class AdminUserService:
         result = await self.session.scalars(
             select(UserModel)
             .options(
-                selectinload(UserModel.courses).selectinload(CourseModel.translations)
+                selectinload(UserModel.courses).selectinload(CourseModel.translations),
+                with_loader_criteria(UserModel,UserModel.is_deleted == False)
             )
-            .join(UserModel.role_ref)  # join only for filtering
-            .where(RoleModel.role == Roles.STUDENT, UserModel.is_deleted == False)
+            # .join(UserModel.role_ref)  # join only for filtering
+            .where(UserModel.role_ref.has(RoleModel.role == Roles.STUDENT))
         )
         students = result.all()
 
@@ -624,8 +626,8 @@ class AdminUserService:
         result = await self.session.scalars(
             select(UserModel)
             .options(selectinload(UserModel.faculty_courses).selectinload(CourseModel.translations))
-            .join(UserModel.role_ref)
-            .where(RoleModel.role == Roles.FACULTY, UserModel.is_deleted == False)
+            .where(
+                UserModel.role_ref.has(RoleModel.role == Roles.FACULTY), UserModel.is_deleted.is_(False))
         )
         faculty_members = result.all()
 
@@ -664,9 +666,8 @@ class AdminUserService:
                       .over(order_by=func.count(Association.course_id).desc())
                       .label("rank"),)
                       .join(Association, Association.user_id == UserModel.id)
-                      .join(UserModel.role_ref)
                       .where(
-                          RoleModel.role == Roles.STUDENT,
+                          UserModel.role_ref.has(RoleModel.role == Roles.STUDENT),
                           UserModel.is_deleted.is_(False)
                       )
                       .group_by(UserModel.id)

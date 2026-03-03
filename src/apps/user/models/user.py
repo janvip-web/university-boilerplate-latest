@@ -1,9 +1,11 @@
 from uuid import UUID
 import uuid
 from typing import Self
-
+from datetime import date
+from sqlalchemy import Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from apps.course.models.course import Association
 from core.db import Base
 from core.enum import LanguageEnum
 from core.utils.mixins import TimeStampMixin, UUIDPrimaryKeyMixin
@@ -39,9 +41,11 @@ class UserModel(Base, UUIDPrimaryKeyMixin, TimeStampMixin):
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.role_id"))
     preferred_language: Mapped[LanguageEnum] = mapped_column(Enum(LanguageEnum, name="languageenum",create_type=False,
                                                                   values_callable=lambda enum: [e.value for e in enum]), nullable=True)
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     role_ref: Mapped["RoleModel"] = relationship("RoleModel", back_populates="users")
-    courses = relationship("CourseModel", secondary="association", back_populates="students", lazy="selectin")
+    courses = relationship("CourseModel", secondary="association", back_populates="students", 
+                           lazy="selectin", order_by = Association.enrolled_at.desc())
     faculty_courses = relationship("CourseModel", back_populates="faculty")
 
     def __str__(self) -> str:

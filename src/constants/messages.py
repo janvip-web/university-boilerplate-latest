@@ -93,3 +93,9 @@ COURSE_ALREADY_EXISTS = "Course already exists."
 ENROLLMENT_IMPORTED = "Enrollment imported successfully."
 
 NO_NEW_ENROLLMENT = "No new enrollments added. All records already exist."
+
+USER_RESTORED = "User restored successfully."
+
+USER_STATUS_UPDATED = "User status updated successfully."
+
+DOB_VALIDATION = "date_of_birth must be in format DD/MM/YYYY"

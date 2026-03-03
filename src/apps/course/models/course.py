@@ -131,7 +131,9 @@ class Association(Base, UUIDPrimaryKeyMixin):
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     course_id: Mapped[UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"))
-   
+    enrolled_at: Mapped[datetime] = mapped_column(
+        default=datetime.utcnow, server_default=func.now(), nullable=True
+    )
 
 
     __table_args__ = (

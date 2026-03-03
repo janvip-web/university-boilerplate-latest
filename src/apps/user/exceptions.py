@@ -9,6 +9,12 @@ class DuplicateEmailException(CustomException):
 
     message = constants.DUPLICATE_EMAIL
 
+class DOBValidationException(BadRequestError):
+    """
+    Custom exception for DOB validation
+    """
+    message = constants.DOB_VALIDATION
+
 
 class InvalidCredentialsException(UnauthorizedError):
     """

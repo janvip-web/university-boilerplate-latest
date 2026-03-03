@@ -1,9 +1,7 @@
 from typing import Annotated, Optional, List
-from unittest import result
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Request, status, Query, UploadFile, File
-from fastapi.responses import JSONResponse
 from fastapi_pagination import Page, Params
 
 
@@ -309,7 +307,7 @@ async def soft_delete_user_by_id(
 async def restore_user_by_admin(
     user_id: Annotated[UUID, Path()],
     service: Annotated[AdminUserService, Depends()]
-) -> BaseResponse[BaseUserResponse]:
+) -> BaseResponse:
     """
     Restore a soft-deleted user.
 
@@ -342,7 +340,7 @@ async def update_user_status(
     user_id: Annotated[UUID, Path()],
     is_activated: Annotated[bool, Body()],
     service: Annotated[AdminUserService, Depends()]
-) -> BaseResponse[BaseUserResponse]:
+) -> BaseResponse:
     """
     Update the activation status of a user.
 

@@ -8,10 +8,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 import constants
 from apps.user.models.user import UserModel
 from apps.user.schemas.request import EncryptedRequest, CreateUserRequest
-from apps.user.schemas.response import BaseUserResponse
+from apps.user.schemas.response import BaseUserResponse, GetSelfResponse
 from apps.user.services import UserService
 from core.auth import HasPermission
-from core.types import RoleType
 from core.utils.schema import BaseResponse
 from core.utils.set_cookies import set_auth_cookies
 import jwt
@@ -83,7 +82,7 @@ async def sign_in(
 async def get_self_handler(
     user: Annotated[UserModel, Depends(HasPermission(role_name=["STUDENT", "FACULTY"]))],
     service: Annotated[UserService, Depends()],
-) -> BaseResponse[BaseUserResponse]:
+) -> BaseResponse[GetSelfResponse]:
     """
     Retrieve profile information of the authenticated user.
 
@@ -98,7 +97,8 @@ async def get_self_handler(
         HasPermission: If the user lacks the required roles.
     """
     # print("INSIDE SELF API")
-    return BaseResponse(data=await service.get_self(user_id=user.id))
+    user_data = await service.get_self(user_id=user.id)
+    return BaseResponse(data= user_data.model_dump(exclude_none=True))
 
 @router.get(
     "/student/my-courses",

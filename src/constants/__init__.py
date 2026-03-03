@@ -47,7 +47,10 @@ from constants.messages import (
     ASSIGN_COURSES_TO_FACULTY,
     STUDENT_ENROL,
     ENROLLMENT_IMPORTED,
-    NO_NEW_ENROLLMENT
+    NO_NEW_ENROLLMENT,
+    USER_RESTORED,
+    USER_STATUS_UPDATED,
+    DOB_VALIDATION
 )
 from constants.regex import EMAIL_REGEX
 from constants.roles import Roles
@@ -103,5 +106,8 @@ __all__ = [
     "STUDENT_ENROL",
     "ENROLLMENT_IMPORTED",
     "NO_NEW_ENROLLMENT",
+    "USER_RESTORED",
+    "USER_STATUS_UPDATED",
+    "DOB_VALIDATION",
     "Roles"
 ]

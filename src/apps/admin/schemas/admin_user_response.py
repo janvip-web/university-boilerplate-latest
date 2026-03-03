@@ -14,6 +14,4 @@ class  AdminListUsersResponse(BaseUserResponse):
     """
 
     email: str
-    phone: str
-    role_id: int
     preferred_language: str

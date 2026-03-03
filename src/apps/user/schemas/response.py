@@ -18,3 +18,10 @@ class BaseUserResponse(BaseModel):
     first_name: str
     last_name: str
     role: str
+
+class GetSelfResponse(BaseModel):
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    birthday_message: str | None = None
