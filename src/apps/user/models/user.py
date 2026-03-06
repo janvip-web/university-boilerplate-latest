@@ -1,4 +1,3 @@
-from uuid import UUID
 import uuid
 from typing import Self
 from datetime import date

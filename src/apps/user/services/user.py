@@ -2,7 +2,7 @@ from io import BytesIO
 import json
 from typing import Annotated
 from uuid import UUID
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -45,7 +45,7 @@ class UserService:
     This service provides methods for creating users, logging in, and retrieving user information.
     """
 
-    def __init__(self, session: Annotated[AsyncSession, Depends(db_session)], request:Request) -> None:
+    def __init__(self, session: Annotated[AsyncSession, Depends(db_session)]) -> None:
         """
         Initialize AuthService with a database session
         This method also calls a database connection which is injected here.
@@ -54,23 +54,23 @@ class UserService:
             session (AsyncSession): An asynchronous database connection.
         """
         self.session = session
-        self.request = request
 
     async def get_self(self, user_id: UUID) -> GetSelfResponse:
         """
         Retrieve user profile information and birthday greeting.
 
         Fetches the authenticated user's profile information including email, name,
-        and date of birth. Checks if today is the user's birthday and includes a
-        birthday greeting message (cached in Redis to show once per day).
+        and date of birth. Checks if today is the user's birthday based on the cron job
+        having set the Redis key, and includes a birthday greeting message shown only
+        once per day after the cron job runs.
 
         Args:
             user_id (UUID): The ID of the user.
 
         Returns:
             GetSelfResponse: Response schema containing user profile information
-                and optional birthday greeting message (shown only between 5:00-5:59 AM UTC
-                on the user's birthday).
+                and optional birthday greeting message (shown only once per day after
+                the birthday cron job has run).
 
         Raises:
             UserNotFoundException: If the user with the given ID is not found.
@@ -93,35 +93,25 @@ class UserService:
         
         birthday_message = None
 
-        # if user.date_of_birth:
-        #     today = datetime.utcnow().date()
-
-        #     if (
-        #         user.date_of_birth.month == today.month
-        #         and user.date_of_birth.day == today.day
-        #     ):
-        #         current_year = today.year
-        #         redis_key = f"birthday:{user.id}:{current_year}"
-
-        #         already_shown = await redis.get(redis_key)
-
-        #         if not already_shown:
-        #             birthday_message = "🎉 Happy Birthday!"
-                    
-        #             # expire after 2 days (optional safety)
-        #             await redis.set(redis_key, "shown", ex=10)
-
-        
-
-        IST = pytz.timezone("Asia/Kolkata")
         today = datetime.now(IST).date()
-
         redis_key = f"birthday_sent:{user.id}:{today}"
 
-        already_sent = await redis.get(redis_key)
+        # Check if cron job has set the key (indicating birthday and cron run)
+        if await redis.get(redis_key):
+            api_shown_key = f"birthday_api_shown:{user.id}:{today}"
 
-        if already_sent:
-            birthday_message = "🎉 Happy Birthday!"
+            # Show message only if not already shown via API today
+            if not await redis.get(api_shown_key):
+                birthday_message = "🎉 Happy Birthday!"
+                
+                # Expire at midnight
+                midnight = IST.localize(
+                    datetime.combine(today + timedelta(days=1), datetime.min.time())
+                )
+                now = datetime.now(IST)
+                seconds_left = int((midnight - now).total_seconds())
+                
+                await redis.set(api_shown_key, "shown", ex=seconds_left)
 
         return GetSelfResponse(
                     id=user.id,

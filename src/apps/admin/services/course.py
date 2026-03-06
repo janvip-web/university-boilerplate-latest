@@ -381,3 +381,40 @@ class AdminCourseService:
         wb.save(buf)
         buf.seek(0)
         return buf.getvalue()
+    
+    # async def generate_courses_excel(
+    #     self,
+    #     course_name,
+    #     course_credit,
+    #     search,
+    #     sort_by,
+    #     order
+    # ):
+
+    #     stmt = self._build_course_query(
+    #         course_name=course_name,
+    #         course_credit=course_credit,
+    #         search=search,
+    #         sort_by=sort_by,
+    #         order=order
+    #     )
+
+    #     result = await self.session.scalars(stmt)
+    #     courses = result.all()
+
+    #     wb = Workbook()
+    #     ws = wb.active
+
+    #     ws.append(["id", "course_name", "course_credit", "course_description", "created_at"])
+
+    #     for c in courses:
+    #         ws.append([
+    #             str(c.id),
+    #             c.course_name,
+    #             c.course_credit,
+    #             c.course_description,
+    #             c.created_at.isoformat()
+    #         ])
+
+    #     file_path = f"exports/courses_export.xlsx"
+    #     wb.save(file_path)

@@ -9,12 +9,10 @@ from fastapi.security.base import SecurityBase
 from jwt import DecodeError, ExpiredSignatureError, decode, encode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only, selectinload
+from sqlalchemy.orm import selectinload
 
 import constants.messages as constants
 from apps.user.models.user import UserModel
-# from apps.student.models.student import StudentModel
-# from apps.faculty.models.faculty import FacultyModel
 from config import settings
 from core.db import db_session
 from core.exceptions import InvalidJWTTokenException, UnauthorizedError

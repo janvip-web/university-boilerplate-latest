@@ -37,15 +37,18 @@ async def lifespan(app):
 
     logger.info("starting scheduler")
 
-    scheduler.add_job(
+    schedule = scheduler.add_job(
     job,
     "cron",
-    hour=18,
-    minute=30,
-    # second="*/10",
+    hour=8,
+    minute=0,
+    timezone="Asia/Kolkata",
+    # second="*/1",
     args=[app],   # pass app here
 )
     scheduler.start()
+    logger.info(schedule)
+    logger.info("Success")
     await FastAPILimiter.init(redis)
     yield
     

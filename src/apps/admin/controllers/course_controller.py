@@ -1,7 +1,7 @@
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Path, Request, status, Query, UploadFile, File
+from fastapi import APIRouter, Body, Depends, Path, Request, status, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi_pagination import Page, Params
 import io
@@ -134,6 +134,43 @@ async def export_courses(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
+
+# @router.post("/export")
+# async def export_courses(
+#     background_tasks: BackgroundTasks,
+#     service: Annotated[AdminCourseService, Depends()],
+#     course_name: Annotated[Optional[str], Query()] = None,
+#     course_credit: Annotated[Optional[int], Query()] = None,
+#     search: Annotated[Optional[str], Query()] = None,
+#     sort_by: Annotated[CourseSortField, Query()] = CourseSortField.created_at,
+#     order: Annotated[SortOrder, Query()] = SortOrder.desc,
+# ):
+
+#     background_tasks.add_task(
+#         service.generate_courses_excel,
+#         course_name,
+#         course_credit,
+#         search,
+#         sort_by,
+#         order
+#     )
+
+#     return {
+#         "message": "Export started. File will be generated shortly."
+#     }
+
+# from fastapi.responses import FileResponse
+
+# @router.get("/download-export")
+# async def download_export():
+
+#     file_path = "exports/courses_export.xlsx"
+
+#     return FileResponse(
+#         path=file_path,
+#         filename="courses.xlsx",
+#         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+#     )
 
 @router.get(
     "/courses",

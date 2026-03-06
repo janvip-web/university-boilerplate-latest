@@ -66,7 +66,7 @@ async def job(app) -> None:
             already_sent = await redis.get(redis_key)
 
             if not already_sent:
-                # 🎉 Replace this with real notification logic
+                # Replace this with real notification logic
                 logger.info(f"Sending birthday notification to {user.first_name}")
 
                 # expire at midnight

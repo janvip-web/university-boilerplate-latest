@@ -24,7 +24,7 @@ class CourseModel(Base, UUIDPrimaryKeyMixin):
     course_name: Mapped[str] = mapped_column(index=True)
     course_credit: Mapped[int] = mapped_column()
     course_description: Mapped[str] = mapped_column(nullable=True)
-    faculty_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    faculty_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow, server_default=func.now(), nullable=True
     )

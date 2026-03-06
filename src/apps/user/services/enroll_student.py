@@ -146,7 +146,7 @@ class EnrollService:
         courses = result.all()
 
         enrollments = (
-            await self.session.execute(
+            await self.session.scalars(
                 select(Association.user_id, Association.course_id)
             )
         ).all()
