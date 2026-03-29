@@ -1,25 +1,41 @@
+from io import BytesIO
 import json
 from typing import Annotated
 from uuid import UUID
+from datetime import datetime, time, timedelta
+import pytz
 
-from fastapi import Depends, Request
-from sqlalchemy import and_, or_, select
+IST = pytz.timezone("Asia/Kolkata")
+from core.db import redis
+from fastapi import Depends, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
+from openpyxl import Workbook
+from sqlalchemy import and_, or_, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, selectinload
 
 import constants
 from apps.user.exceptions import (
-    DuplicateEmailException,
     InvalidCredentialsException,
     UserNotFoundException,
+    InvalidRequestException, 
+    WeakPasswordException,
+    UserNotStudent,
+    CourseNotFoundException,
+    EmailFieldRequired,
+    PasswordFieldRequired
 )
-from apps.user.models.user import UserModel
+from apps.user.schemas.response import GetSelfResponse
+from apps.user.models.user import UserModel, RoleModel
+from apps.course.models.course import CourseModel, CourseTranslationModel, Association
+from apps.course.schemas.response import StudentCourseResponse
 from config import settings
 from core.common_helpers import create_tokens, decrypt, validate_input_fields
 from core.db import db_session
-from core.exceptions import BadRequestError
-from core.types import RoleType
 from core.utils.hashing import hash_password, verify_password
+from core.utils import strong_password
+from constants.roles import Roles
+
 
 
 class UserService:
@@ -39,17 +55,27 @@ class UserService:
         """
         self.session = session
 
-    async def get_self(self, user_id: UUID) -> UserModel:
+    async def get_self(self, user_id: UUID) -> GetSelfResponse:
         """
-        Retrieve user information by user ID.
+        Retrieve user profile information and birthday greeting.
+
+        Fetches the authenticated user's profile information including email, name,
+        and date of birth. Checks if today is the user's birthday based on the cron job
+        having set the Redis key, and includes a birthday greeting message shown only
+        once per day after the cron job runs.
 
         Args:
             user_id (UUID): The ID of the user.
 
         Returns:
-            UserModel: The user model with the user's information.
+            GetSelfResponse: Response schema containing user profile information
+                and optional birthday greeting message (shown only once per day after
+                the birthday cron job has run).
+
+        Raises:
+            UserNotFoundException: If the user with the given ID is not found.
         """
-        return await self.session.scalar(
+        user = await self.session.scalar(
             select(UserModel)
             .options(
                 load_only(
@@ -61,6 +87,40 @@ class UserService:
             )
             .where(UserModel.id == user_id)
         )
+
+        if not user:
+            raise UserNotFoundException
+        
+        birthday_message = None
+
+        today = datetime.now(IST).date()
+        redis_key = f"birthday_sent:{user.id}:{today}"
+
+        # Check if cron job has set the key (indicating birthday and cron run)
+        if await redis.get(redis_key):
+            api_shown_key = f"birthday_api_shown:{user.id}:{today}"
+
+            # Show message only if not already shown via API today
+            if not await redis.get(api_shown_key):
+                birthday_message = "🎉 Happy Birthday!"
+                
+                # Expire at midnight
+                midnight = IST.localize(
+                    datetime.combine(today + timedelta(days=1), datetime.min.time())
+                )
+                now = datetime.now(IST)
+                seconds_left = int((midnight - now).total_seconds())
+                
+                await redis.set(api_shown_key, "shown", ex=seconds_left)
+
+        return GetSelfResponse(
+                    id=user.id,
+                    email=user.email,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    birthday_message=birthday_message,
+        )
+    
 
     async def login_user(
         self, request: Request, encrypted_data: str, encrypted_key: str, iv: str
@@ -76,8 +136,11 @@ class UserService:
          Returns:
              dict[str, str]: A dictionary containing the authentication tokens.
 
-         Raises:
-             InvalidCredentialsException: If the login credentials are invalid.
+        Raises:
+            EmailFieldRequired: If email is missing from decrypted credentials.
+            PasswordFieldRequired: If password is missing from decrypted credentials.
+            InvalidCredentialsException: If email not found, user role is not
+                STUDENT/FACULTY, or password does not match.
         """
 
         decrypted_data = await decrypt(
@@ -95,45 +158,198 @@ class UserService:
         print(email, password)
 
         if email is None:
-            raise BadRequestError(message=constants.EMAIL_FIELD_REQUIRED)
+            raise EmailFieldRequired
 
         if password is None:
-            raise BadRequestError(message=constants.PASSWORD_FIELD_REQUIRED)
+            raise PasswordFieldRequired
 
         user = await self.session.scalar(
-            select(UserModel).where(
-                and_(UserModel.email == email, UserModel.role == RoleType.USER)
+            select(UserModel)
+            .options(selectinload(UserModel.role_ref))
+            .where(
+                and_(UserModel.email == email,)
+                    #  RoleModel.role.in_([Roles.STUDENT,Roles.FACULTY]))  
             )
         )
         if not user:
             raise InvalidCredentialsException
+        
+        # Only allow students and faculty to login
+        user_role = user.role_ref.role
+        if user_role not in [Roles.STUDENT, Roles.FACULTY] :
+            raise InvalidCredentialsException
+
         verify = await verify_password(
             hashed_password=user.password, plain_password=password
         )
         if not verify:
             raise InvalidCredentialsException
+        
+        return await create_tokens(user)
 
-        return await create_tokens(user_id=user.id, role=user.role)
-
-    async def create_user(
-        self, request: Request, encrypted_data: str, encrypted_key: str, iv: str
-    ) -> UserModel:
+    async def _get_user_with_courses(self, user_id: UUID):
         """
-        Create a new user.
+        Internal helper to fetch a user along with their course relationships.
+
+        Ensures the user exists and has a student role before returning. Used by
+        several public methods to avoid repeating query logic.
 
         Args:
-            email (EmailStr): The user's email address.
-            password (str): The user's password.
-            first_name (str): The user's first name.
-            last_name (str): The user's last name.
-            phone (str): The user's phone number.
-
-        Returns:
-            UserModel: The created user model.
+            user_id: UUID of the user to retrieve.
 
         Raises:
-            DuplicateEmailException: If a user with the given email already exists.
+            UserNotFoundException: If the user cannot be found in the database.
+            UserNotStudent: If the user is not assigned a student role.
         """
+
+        result = await self.session.scalars(
+            select(UserModel)
+            .options(selectinload(UserModel.role_ref),
+                selectinload(UserModel.courses)
+                .selectinload(CourseModel.translations)
+            )
+            .where(UserModel.id == user_id)
+        )
+
+        user = result.first()
+
+        if not user:
+            raise UserNotFoundException()
+
+        if user.role_ref.role != Roles.STUDENT:
+            raise UserNotStudent
+        
+        return user
+
+    async def get_my_courses(self, user_id: UUID):
+        """
+        Retrieve enrolled courses for a student.
+
+        Fetches all courses the student is enrolled in with translated course names
+        based on the user's preferred language. Falls back to English translation
+        if the preferred language is unavailable.
+
+        Args:
+            user_id (UUID): The ID of the student user.
+
+        Returns:
+            List[StudentCourseResponse]: List of enrolled courses with translated
+                names and credit information.
+
+        Raises:
+            UserNotFoundException: If the user cannot be found.
+            UserNotStudent: If the user does not have a student role.
+        """
+        user = await self._get_user_with_courses(user_id=user_id)
+        
+        preferred_lang = user.preferred_language
+        response_courses = []
+
+        for course in user.courses:
+
+            # find translation
+            translation = next(
+                (t for t in course.translations if t.language_code == preferred_lang),
+                None
+            ) or next(
+                (t for t in course.translations if t.language_code == 'en'),
+                None
+            )
+
+            response_courses.append(
+                StudentCourseResponse(
+                    id=course.id,
+                    translated_name=translation.course_name if translation else course.course_name,
+                    course_credit=course.course_credit,
+                )
+            )
+
+        return response_courses
+    
+    async def get_recent_course(self, user_id, limit: int = 5):
+        """
+        Fetch recently created courses that the user has not enrolled in.
+
+        Args:
+            user_id (UUID): The ID of the student user.
+            limit (int): Maximum number of courses to return. Defaults to 5.
+
+        Returns:
+            List[StudentCourseResponse]: Recently created courses with translated
+                names and credit information, excluding already enrolled courses.
+
+        Raises:
+            UserNotFoundException: If the user cannot be found.
+            UserNotStudent: If the user does not have a student role.
+        """
+        user = await self._get_user_with_courses(user_id=user_id)
+
+
+
+        preferred_lang = user.preferred_language
+
+        enrolled_course_ids = [course.id for course in user.courses]
+
+        stmt = (
+            select(CourseModel)
+            .where(~CourseModel.id.in_(enrolled_course_ids))
+            .options(selectinload(CourseModel.translations))
+            .order_by(desc(CourseModel.created_at))
+            .limit(limit)
+        )
+
+        result = await self.session.scalars(stmt)
+        courses = result.all()
+
+        response = []
+
+        for course in courses:
+
+            translation = next(
+                (t for t in course.translations if t.language_code == preferred_lang),
+                None
+            ) or next(
+                (t for t in course.translations if t.language_code == "en"),
+                None
+            )
+
+            response.append(
+                StudentCourseResponse(
+                    id=course.id,
+                    course_name=translation.course_name if translation else course.course_name,
+                    course_credit=course.course_credit
+                )
+            )
+
+        return response
+        
+    async def change_password(
+        self,
+        request: Request,
+        user: UUID,
+        encrypted_data: str,
+        encrypted_key: str,
+        iv: str,
+    ):
+        """
+        Change the password for a user.
+
+        Args:
+            user (UUID): The ID of the user.
+            encrypted_data (str): The encrypted data containing the current and new passwords.
+            encrypted_key (str): The encrypted key used to encrypt the data.
+            iv (str): The initialization vector used to encrypt the data.
+
+        Returns:
+            UserModel: The updated user model with the new password.
+
+        Raises:
+            UserNotFoundException: If the user with the given UUID is not found.
+            InvalidRequestException: If current or new password is missing from data.
+            WeakPasswordException: If the new password does not meet strength requirements.
+            InvalidCredentialsException: If the current password is incorrect.
+        """
+
         decrypted_data = await decrypt(
             rsa_key=request.app.state.rsa_key,
             enc_data=encrypted_data,
@@ -142,58 +358,113 @@ class UserService:
         )
         decrypted_data = json.loads(decrypted_data)
 
-        first_name = decrypted_data.get("first_name")
-        last_name = decrypted_data.get("last_name")
-        phone = decrypted_data.get("phone")
-        email = decrypted_data.get("email")
-        password = decrypted_data.get("password")
+        current_password = decrypted_data.get("current_password")
+        new_password = decrypted_data.get("new_password")
 
-        validate_input_fields(
-            first_name=first_name, email=email, phone=phone, password=password
+        if not current_password or not new_password:
+            raise InvalidRequestException
+
+        if not strong_password(new_password):
+            raise WeakPasswordException
+
+        current_user = await self.session.scalar(
+            select(UserModel).where(UserModel.id == user)
         )
 
-        user = await self.session.scalar(
-            select(UserModel)
-            .options(load_only(UserModel.email))
-            .where(or_(UserModel.email == email, UserModel.phone == phone))
-        )
-        if user:
-            raise DuplicateEmailException
+        if not current_user:
+            raise UserNotFoundException
 
-        user = UserModel.create(
-            first_name=first_name,
-            last_name=last_name,
-            phone=phone,
-            password=await hash_password(password),
-            email=email,
+        verify = await verify_password(
+            hashed_password=current_user.password, plain_password=current_password
         )
-        self.session.add(user)
-        return user
 
-    async def get_user_by_id(self, user_id: UUID):
+        if not verify:
+            raise InvalidCredentialsException
+
+        current_user.password = await hash_password(new_password)
+
+        return current_user
+    
+    async def search_course(self, search:str):
         """
-        Retrieve a user by their ID.
+        Search for courses by name or translation.
 
         Args:
-            user_id (UUID): The ID of the user to retrieve.
+            search: Term to match against course names or their translations.
 
         Returns:
-            UserModel: The user model with the requested user's information.
-        """
+            List[CourseModel]: Matching course records.
 
-        searched_user = await self.session.scalar(
-            select(UserModel)
-            .options(
-                load_only(
-                    UserModel.id,
-                    UserModel.email,
-                    UserModel.first_name,
-                    UserModel.last_name,
+        Raises:
+            CourseNotFoundException: If no courses match the search term.
+        """
+          
+        stmt = (
+            select(CourseModel)
+            .where(
+                or_(
+                    CourseModel.course_name.ilike(f"%{search}%"),
+                CourseModel.translations.any(CourseTranslationModel.course_name.ilike(f"%{search}%"))
                 )
             )
-            .where(UserModel.id == user_id)
+            .options(selectinload(CourseModel.translations))
+            .distinct()
         )
 
-        if not searched_user:
-            raise UserNotFoundException
-        return searched_user
+        result = await self.session.scalars(stmt)
+        courses = result.all()
+
+        if not courses:
+            raise CourseNotFoundException
+
+        return courses
+
+
+    async def export_my_courses(self, user_id: UUID)-> StreamingResponse:
+        """
+        Export the authenticated user's courses as an Excel workbook.
+
+        Args:
+            user_id: UUID of the student user.
+
+        Returns:
+            bytes: Binary content of the generated Excel file.
+        """
+        user = await self._get_user_with_courses(user_id = user_id)
+
+        preferred_language = user.preferred_language
+        print("preferred_lang", preferred_language)
+        courses = user.courses
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title="My courses"
+        ws.append(["id","course_name","course_credit"])
+        for c in courses:
+            print("Course:", c.id)
+            print("Available translations:",[t.language_code for t in c.translations])
+                    # 1️⃣ Find translation in preferred language
+            translation = next(
+                (t for t in c.translations if t.language_code == preferred_language),
+                None
+            ) or next(
+                # 2️⃣ Fallback to English
+                (t for t in c.translations if t.language_code == "en"),
+                None
+            )
+
+            # 3️⃣ Final fallback to base course name
+            course_name = (
+                translation.course_name
+                if translation
+                else c.course_name
+            )
+
+            ws.append([str(c.id),
+                       course_name,
+                       c.course_credit])
+            
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()

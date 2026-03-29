@@ -6,6 +6,7 @@ from fastapi_limiter import FastAPILimiter
 from config import settings
 from core.db import redis
 from core.utils import logger, scheduler
+from apps.jobs import job
 
 
 @asynccontextmanager
@@ -36,7 +37,18 @@ async def lifespan(app):
 
     logger.info("starting scheduler")
 
+    schedule = scheduler.add_job(
+    job,
+    "cron",
+    hour=8,
+    minute=0,
+    timezone="Asia/Kolkata",
+    # second="*/1",
+    args=[app],   # pass app here
+)
     scheduler.start()
+    logger.info(schedule)
+    logger.info("Success")
     await FastAPILimiter.init(redis)
     yield
     

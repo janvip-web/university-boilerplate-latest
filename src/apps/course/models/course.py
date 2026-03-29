@@ -1,81 +1,167 @@
 import uuid
 from uuid import UUID
 from typing import Self, TYPE_CHECKING,List
+from datetime import datetime
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy import Enum, func
 
 from core.db import Base
-from core.types import RoleType
 from core.utils.mixins import UUIDPrimaryKeyMixin
+from core.enum import LanguageEnum
 
-if TYPE_CHECKING:
-    from apps.student.models.student import StudentModel
-    from apps.faculty.models.faculty import FacultyModel
 
 class CourseModel(Base, UUIDPrimaryKeyMixin):
+    """
+    SQLAlchemy model representing a course.
+
+    Contains metadata such as name, credit, description, associated faculty
+    and relationships to enrolled students and translations.
+    """
     __tablename__="courses"
 
     course_name: Mapped[str] = mapped_column(index=True)
     course_credit: Mapped[int] = mapped_column()
-    faculty_id: Mapped[UUID] = mapped_column(ForeignKey("faculties.id", ondelete="SET NULL"), nullable=True)
-    # student_id: Mapped[UUID] = mapped_column(ForeignKey("students.id",ondelete="SET NULL", onupdate="CASCADE"),  nullable=True)
-    # faculty_id: Mapped[UUID] = mapped_column(ForeignKey("faculties.id"))
+    course_description: Mapped[str] = mapped_column(nullable=True)
+    faculty_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        default=datetime.utcnow, server_default=func.now(), nullable=True
+    )
 
-    # student: Mapped["StudentModel"] = relationship("StudentModel", back_populates="courses")
-    faculty: Mapped["FacultyModel"] = relationship("FacultyModel", back_populates="courses")
-
-    students: Mapped[List["StudentModel"]] = relationship("StudentModel",secondary="association", back_populates="courses", lazy="selectin")
-    # faculty: Mapped["FacultyModel"] = relationship("FacultyModel", back_populates="courses")
+    students = relationship("UserModel", secondary="association", back_populates="courses", lazy="selectin")
+    faculty = relationship("UserModel", back_populates="faculty_courses")
+    translations: Mapped[List["CourseTranslationModel"]] = relationship("CourseTranslationModel", back_populates="course", cascade="all, delete-orphan")
 
     def __str__(self):
+        """
+        Return a human-readable representation of the course.
+
+        :return: String containing the course name.
+        """
         return f"<Course {self.course_name}>"
 
     @classmethod
     def create(
         cls,
-        # student_id: UUID,
-        # faculty_id: UUID,
         course_name: str,
         course_credit: int,
-        faculty_id: UUID | None = None
+        course_description: str | None = None,
     ) -> Self:
+        """
+        Factory helper to instantiate a new CourseModel with a generated UUID.
+
+        Args:
+            course_name: Name of the course.
+            course_credit: Credit value for the course.
+            course_description: Optional description text.
+
+        Returns:
+            CourseModel: Unsaved course instance.
+        """
         return cls(
             id=uuid.uuid4(),
-            # student_id=student_id,
-            faculty_id=faculty_id,
             course_name=course_name,
             course_credit=course_credit,
+            course_description=course_description,
         )
     
+    def get_translated_name(self, language: str) -> str:
+        """
+        Return the course name translated to the requested language.
 
+        Falls back to English or the original name if translation is unavailable.
+
+        Args:
+            language: Language code to translate into.
+
+        Returns:
+            str: Translated or default course name.
+        """
+        try:
+            requested_lang = LanguageEnum(language.lower())
+        except ValueError:
+            requested_lang = LanguageEnum.EN
+
+        translation = next(
+            (t for t in self.translations if t.language_code == requested_lang),
+            None
+        ) or next(
+            (t for t in self.translations if t.language_code == LanguageEnum.EN),
+            None
+        )
+
+        return translation.course_name if translation else self.course_name
+
+
+class CourseTranslationModel(Base, UUIDPrimaryKeyMixin):
+    """
+    Represents a localized translation for a course name.
+
+    A unique constraint ensures one translation per language per course.
+    """
+    __tablename__ = "course_translations"
+
+    course_id: Mapped[UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    course_name: Mapped[str] = mapped_column(index=True)
+    language_code: Mapped[LanguageEnum] = mapped_column(
+        Enum(
+            LanguageEnum,
+            name="languageenum",   # must match existing DB enum type
+            create_type=False ,     # 🔥 prevents duplicate enum creation
+            values_callable=lambda enum: [e.value for e in enum]
+        ),
+        nullable=False )
+
+    __table_args__ = (
+            UniqueConstraint("course_id", "language_code", name="uq_course_language"),
+    )
+
+    course: Mapped["CourseModel"] = relationship("CourseModel", back_populates="translations")
 
 
 
 class Association(Base, UUIDPrimaryKeyMixin):
+    """
+    Junction table mapping users to courses for enrollment relations.
+
+    Ensures that each user-course pair is unique.
+    """
     __tablename__="association"
 
-    student_id: Mapped[UUID] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"))
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     course_id: Mapped[UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"))
-    # faculty_id: Mapped[UUID] = mapped_column(ForeignKey("faculties.id"))
+    enrolled_at: Mapped[datetime] = mapped_column(
+        default=datetime.utcnow, server_default=func.now(), nullable=True
+    )
 
 
     __table_args__ = (
         UniqueConstraint(
-            "student_id",
+            "user_id",
             "course_id",
-            name="uq_student_course"
+            name="uq_user_course"
         ),
     )
 
     @classmethod
     def create(
         cls,
-        student_id: UUID,
+        user_id: UUID,
         course_id: UUID,
     ) -> Self:
+        """
+        Factory helper to create a new association between user and course.
+
+        Args:
+            user_id: UUID of the user enrolling.
+            course_id: UUID of the course being enrolled in.
+
+        Returns:
+            Association: Unsaved association instance linking user and course.
+        """
         return cls(
-            # id=uuid.uuid4(),
-            student_id=student_id,
+            id=uuid.uuid4(),
+            user_id=user_id,
             course_id=course_id,
         )

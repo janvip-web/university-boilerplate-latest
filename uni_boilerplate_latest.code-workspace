@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+		// {
+		// 	"path": "src"
+		// }
+	],
+	"settings": {
+		"python.defaultInterpreterPath": "/home/web-h-038/VSCode Project/uni_boilerplate_latest/.venv/bin/python",
+		"files.associations": {
+			"*.py": "python"
+		},
+		"terminal.integrated.env.linux": {
+			"PYTHONPATH": "${workspaceFolder}/src:${env:PYTHONPATH}"
+		}
+	}
+}

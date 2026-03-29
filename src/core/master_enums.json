@@ -1,5 +1,16 @@
 {
   "CustomerType": {
     "DEFAULT": "Default"
+  },
+  "Language": {
+    "EN": {
+      "code": "en",
+      "name": "English"
+    },
+    "HI": {
+      "code": "hi",
+      "name": "Hindi"
+    }
   }
+
 }

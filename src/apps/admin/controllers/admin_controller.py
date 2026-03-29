@@ -12,7 +12,7 @@ from apps.user.models.user import UserModel
 from apps.user.schemas.response import BaseUserResponse
 from core.auth import AdminHasPermission
 from core.exceptions import UnauthorizedError
-from core.types import RoleType
+from constants.roles import Roles
 from core.utils.schema import BaseResponse
 from core.utils.set_cookies import set_auth_cookies
 
@@ -53,42 +53,11 @@ async def sign_in(
     if "access_token" in res and res.get("access_token"):
         data = {"status": constants.SUCCESS, "code": status.HTTP_200_OK, "data": res}
         response = JSONResponse(content=data)
-        response = set_auth_cookies(response, res, RoleType.ADMIN)
+        response = set_auth_cookies(response, res, Roles.ADMIN)
         return response
     else:
         # Handle case where login fails but doesn't raise an exception
         raise UnauthorizedError(constants.UNAUTHORIZED)
-
-
-@router.get(
-    "/users",
-    status_code=status.HTTP_200_OK,
-    dependencies=[Depends(AdminHasPermission())],
-    name="Admin get all users",
-    description="Admin get all users",
-    operation_id="admin_get_users",
-)
-async def get_users(
-    page_params: Annotated[Params, Depends()],
-    service: Annotated[AdminUserService, Depends()],
-) -> BaseResponse[Page[AdminListUsersResponse]]:
-    """
-    Retrieve a paginated list of all users for admin management.
-
-    This endpoint allows administrators to view all registered users with
-    pagination support. Only admin users can access this endpoint.
-
-    Args:
-        page_params: Pagination parameters (page size, page number)
-        service: AdminUserService instance for business logic
-
-    Returns:
-        BaseResponse[Page[AdminListUsersResponse]]: Paginated list of users
-
-    Raises:
-        AdminHasPermission: If user doesn't have admin permissions
-    """
-    return BaseResponse(data=await service.get_users(params=page_params))
 
 
 @router.get(
@@ -161,3 +130,33 @@ async def change_password(
             request=request, **body.model_dump(), user=user.id
         )
     )
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    name="logout",
+    description="Logout",
+    operation_id="logout",
+)
+async def logout(
+    request: Request,
+    # user: Annotated[UserModel, Depends(AdminHasPermission())],
+    service: Annotated[AdminUserService, Depends()],
+) -> BaseResponse:
+    """
+    Logout the authenticated admin user.
+
+    This endpoint invalidates the admin's session and removes authentication cookies.
+
+    Args:
+        request: The FastAPI request object
+        user: Authenticated admin user from token
+        service: AdminUserService instance for business logic
+
+    Returns:
+        BaseResponse[BaseUserResponse]: Empty response indicating successful logout
+
+    Raises:
+        AdminHasPermission: If user doesn't have admin permissions
+    """
+    return await service.logout(request=request)
